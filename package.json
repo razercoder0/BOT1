@@ -1,0 +1,17 @@
+{
+  "name": "discord-clan-bot",
+  "version": "1.0.0",
+  "description": "Bot de Discord para criar e gerenciar clans com cargo, chat, call e aprovacao por lider.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "deploy": "node src/deploy-commands.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.17.3",
+    "dotenv": "^16.4.7"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
