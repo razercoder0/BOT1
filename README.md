@@ -71,6 +71,17 @@ npm start
 
 O bot cria e mantem o painel automaticamente. Um administrador tambem pode usar `/painel` para publicar ou atualizar a mensagem manualmente.
 
+## Render e health check
+
+O bot abre um servidor HTTP em `0.0.0.0:$PORT`, como exigido pelo Render:
+
+- `/` responde ao keep-alive;
+- `/health` informa se o Discord esta conectado;
+- no Render, `RENDER_EXTERNAL_URL` e detectada automaticamente e recebe um ping a cada 10 minutos;
+- use `KEEP_ALIVE_ENABLED=false` para desativar o ping interno.
+
+No painel do Render, configure o Health Check Path como `/health`. Para maior confiabilidade, configure tambem um monitor externo para acessar a URL publica a cada 10 minutos.
+
 Se `PUBLIC_CHAT_ID` estiver preenchido, o bot usa esse chat publico e nao cria outro. Para o bot criar o canal definido em `PUBLIC_CHAT_NAME`, use `CREATE_PUBLIC_CHAT=true`. Com `false`, somente o canal `acesso` e criado automaticamente.
 
 Separe os cargos administrativos em `ADMIN_ROLE_IDS` usando virgulas. Quem possuir qualquer um deles pode editar o painel e usar o reset de clans.

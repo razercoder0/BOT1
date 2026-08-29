@@ -19,6 +19,7 @@ const {
   UserSelectMenuBuilder
 } = require("discord.js");
 const { getGuildState, saveState, state } = require("./store");
+const { startWebServer } = require("./web-server");
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers]
@@ -1474,7 +1475,25 @@ client.on("interactionCreate", async (interaction) => {
 });
 
 if (require.main === module) {
-  client.login(process.env.DISCORD_TOKEN);
+  const webServer = startWebServer(client);
+  let shuttingDown = false;
+
+  const shutdown = (signal) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`${signal} recebido. Desligando o bot com seguranca.`);
+    webServer.close();
+    client.destroy();
+    process.exit(0);
+  };
+
+  process.once("SIGTERM", () => shutdown("SIGTERM"));
+  process.once("SIGINT", () => shutdown("SIGINT"));
+
+  client.login(process.env.DISCORD_TOKEN).catch((error) => {
+    console.error("Nao foi possivel conectar o bot ao Discord:", error);
+    shutdown("LOGIN_ERROR");
+  });
 }
 
 module.exports = {
