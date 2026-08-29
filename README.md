@@ -82,6 +82,8 @@ O bot abre um servidor HTTP em `0.0.0.0:$PORT`, como exigido pelo Render:
 
 No painel do Render, configure o Health Check Path como `/health`. Para maior confiabilidade, configure tambem um monitor externo para acessar a URL publica a cada 10 minutos.
 
+O workflow `.github/workflows/keep-alive.yml` faz esse ping externo pelo GitHub Actions a cada 10 minutos. Ele tambem pode ser executado manualmente pela aba Actions do repositorio.
+
 Se `PUBLIC_CHAT_ID` estiver preenchido, o bot usa esse chat publico e nao cria outro. Para o bot criar o canal definido em `PUBLIC_CHAT_NAME`, use `CREATE_PUBLIC_CHAT=true`. Com `false`, somente o canal `acesso` e criado automaticamente.
 
 Separe os cargos administrativos em `ADMIN_ROLE_IDS` usando virgulas. Quem possuir qualquer um deles pode editar o painel e usar o reset de clans.

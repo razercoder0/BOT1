@@ -1,0 +1,18 @@
+name: Keep Render Online
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping Render service
+        run: |
+          curl --fail --location --silent --show-error \
+            --retry 4 --retry-delay 10 --max-time 90 \
+            --user-agent "BOT1-Keep-Alive/1.0" \
+            https://bot1-j4cg.onrender.com/
