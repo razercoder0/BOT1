@@ -32,6 +32,8 @@ Bot para Discord que organiza membros por clan.
 - A central privada possui um seletor de usuarios para o lider convidar membros sem digitar comandos.
 - A staff registra partidas com `/clan resultado vencedora:ABC perdedora:XYZ pontos:3`.
 - `/ranking` mostra pontos, vitorias, derrotas e partidas de todos os clans.
+- O painel fixo do ranking e atualizado automaticamente quando os pontos mudam.
+- `/retirarpontos` desfaz a partida mais recente informada e `/resetarpontos` zera somente a classificacao.
 - Administradores podem usar `/resetclans`, com confirmacao, para apagar somente a estrutura dos clans.
 
 ## Como ligar
@@ -57,6 +59,7 @@ COMMUNITY_ROLE_ID=id_do_cargo_da_comunidade
 ADMIN_ROLE_IDS=id_cargo_adm_1,id_cargo_adm_2,id_cargo_adm_3
 ACCESS_CHANNEL_ID=id_do_canal_de_acesso
 ACCESS_CHANNEL_NAME=acesso
+RANKING_CHANNEL_ID=id_do_canal_do_ranking
 CLAN_CATEGORY_NAME=CLANS
 ```
 
