@@ -1116,37 +1116,44 @@ async function handleClanPanel(interaction) {
 }
 
 async function handleInvite(interaction, selectedClan = null, selectedTarget = null) {
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  }
+
   const clan = selectedClan || findClanByLeader(interaction.guild.id, interaction.user.id);
   const target = selectedTarget || interaction.options.getUser("usuario", true);
 
   if (!clan) {
-    return interaction.reply({ content: "Apenas o lider pode convidar membros para o clan.", flags: MessageFlags.Ephemeral });
+    return interaction.editReply("Apenas o lider pode convidar membros para o clan.");
   }
   if (target.bot) {
-    return interaction.reply({ content: "Bots nao podem entrar em clans.", flags: MessageFlags.Ephemeral });
+    return interaction.editReply("Bots nao podem entrar em clans.");
   }
   if (target.id === interaction.user.id) {
-    return interaction.reply({ content: "Voce ja e o lider desse clan.", flags: MessageFlags.Ephemeral });
+    return interaction.editReply("Voce ja e o lider desse clan.");
+  }
+
+  const currentMember = await interaction.guild.members
+    .fetch({ user: target.id, force: true })
+    .catch(() => null);
+  if (!currentMember) {
+    return interaction.editReply("Essa pessoa nao esta mais no servidor. Escolha outro membro.");
   }
 
   const targetClan = findClanByMember(interaction.guild.id, target.id);
   if (targetClan) {
-    return interaction.reply({
-      content: targetClan.tag === clan.tag
+    return interaction.editReply(
+      targetClan.tag === clan.tag
         ? `${target} ja faz parte do seu clan.`
-        : `${target} ja faz parte do clan **${targetClan.tag}**.`,
-      flags: MessageFlags.Ephemeral
-    });
+        : `${target} ja faz parte do clan **${targetClan.tag}**.`
+    );
   }
 
   const existingInvite = Object.values(state.pendingInvites).find(
     (invite) => invite.guildId === interaction.guild.id && invite.invitedId === target.id
   );
   if (existingInvite) {
-    return interaction.reply({
-      content: `${target} ja possui um convite de clan aguardando resposta.`,
-      flags: MessageFlags.Ephemeral
-    });
+    return interaction.editReply(`${target} ja possui um convite de clan aguardando resposta.`);
   }
 
   const inviteId = `${clan.tag}-${target.id}-${Date.now()}`;
@@ -1166,32 +1173,37 @@ async function handleInvite(interaction, selectedClan = null, selectedTarget = n
   } catch (error) {
     delete state.pendingInvites[inviteId];
     saveState();
-    console.error("Nao foi possivel enviar o convite do clan:", error);
-    return interaction.reply({
-      content: `Nao consegui enviar mensagem privada para ${target}. A pessoa precisa liberar mensagens deste servidor.`,
-      flags: MessageFlags.Ephemeral
-    });
+    if (error.code === 50007 || error.code === 50278) {
+      console.warn(`Convite privado recusado pelo Discord para ${target.id} (codigo ${error.code}).`);
+    } else {
+      console.error("Nao foi possivel enviar o convite do clan:", error);
+    }
+    const unavailable = error.code === 50278
+      ? `${target} nao esta mais neste servidor ou nao compartilha outro servidor com o bot.`
+      : `${target} precisa liberar mensagens privadas deste servidor.`;
+    return interaction.editReply(`Nao consegui enviar o convite. ${unavailable}`);
   }
 
-  return interaction.reply({
-    content: `Convite enviado para ${target}. O acesso sera liberado quando a pessoa aceitar.`,
-    flags: MessageFlags.Ephemeral
-  });
+  return interaction.editReply(`Convite enviado para ${target}. O acesso sera liberado quando a pessoa aceitar.`);
 }
 
 async function handleInviteSelect(interaction) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   const tag = interaction.customId.split(":")[1];
   const clan = getClan(interaction.guild.id, tag);
 
   if (!clan || clan.leaderId !== interaction.user.id) {
-    return interaction.reply({
-      content: "Somente o lider desse clan pode usar o seletor de convites.",
-      flags: MessageFlags.Ephemeral
-    });
+    return interaction.editReply("Somente o lider desse clan pode usar o seletor de convites.");
   }
 
-  const targetMember = await interaction.guild.members.fetch(interaction.values[0]);
-  return handleInvite(interaction, clan, targetMember.user);
+  const targetMember = await interaction.guild.members
+    .fetch({ user: interaction.values[0], force: true })
+    .catch(() => null);
+  if (!targetMember) {
+    return interaction.editReply("Essa pessoa nao esta mais no servidor. Escolha outro membro.");
+  }
+
+  return await handleInvite(interaction, clan, targetMember.user);
 }
 
 async function handleAdd(interaction) {
@@ -1964,92 +1976,100 @@ client.on("guildMemberAdd", async (member) => {
 client.on("interactionCreate", async (interaction) => {
   try {
     if (interaction.isChatInputCommand() && interaction.commandName === "painel") {
-      return handlePanelCommand(interaction);
+      return await handlePanelCommand(interaction);
     }
 
     if (interaction.isChatInputCommand() && interaction.commandName === "resetclans") {
-      return handleResetClansCommand(interaction);
+      return await handleResetClansCommand(interaction);
     }
 
     if (interaction.isChatInputCommand() && interaction.commandName === "ranking") {
-      return handleRanking(interaction);
+      return await handleRanking(interaction);
     }
 
     if (interaction.isChatInputCommand() && interaction.commandName === "retirarpontos") {
-      return handleRemovePointsCommand(interaction);
+      return await handleRemovePointsCommand(interaction);
     }
 
     if (interaction.isChatInputCommand() && interaction.commandName === "resetarpontos") {
-      return handleResetPointsCommand(interaction);
+      return await handleResetPointsCommand(interaction);
     }
 
     if (interaction.isChatInputCommand() && interaction.commandName === "clan") {
       const subcommand = interaction.options.getSubcommand();
-      if (subcommand === "resultado") return handleResultCommand(interaction);
+      if (subcommand === "resultado") return await handleResultCommand(interaction);
       if (subcommand === "criar") {
-        return createClan(interaction, interaction.options.getString("tag", true), interaction.options.getString("nome", true));
+        return await createClan(interaction, interaction.options.getString("tag", true), interaction.options.getString("nome", true));
       }
-      if (subcommand === "entrar") return requestJoin(interaction, interaction.options.getString("tag", true));
-      if (subcommand === "painel") return handleClanPanel(interaction);
-      if (subcommand === "convidar") return handleInvite(interaction);
-      if (subcommand === "adicionar") return handleAdd(interaction);
-      if (subcommand === "remover") return handleRemove(interaction);
-      if (subcommand === "desfazer") return handleUndoClanCommand(interaction);
+      if (subcommand === "entrar") return await requestJoin(interaction, interaction.options.getString("tag", true));
+      if (subcommand === "painel") return await handleClanPanel(interaction);
+      if (subcommand === "convidar") return await handleInvite(interaction);
+      if (subcommand === "adicionar") return await handleAdd(interaction);
+      if (subcommand === "remover") return await handleRemove(interaction);
+      if (subcommand === "desfazer") return await handleUndoClanCommand(interaction);
     }
 
     if (interaction.isUserSelectMenu() && interaction.customId.startsWith("clan_invite_select:")) {
-      return handleInviteSelect(interaction);
+      return await handleInviteSelect(interaction);
     }
 
     if (interaction.isButton()) {
-      if (interaction.customId === "panel_community") return handleCommunityAccess(interaction);
-      if (interaction.customId === "panel_create_clan") return interaction.showModal(createClanModal());
-      if (interaction.customId === "panel_join_clan") return interaction.showModal(joinClanModal());
-      if (interaction.customId === "panel_edit") return handlePanelEdit(interaction);
-      if (interaction.customId === "panel_ranking") return handleRanking(interaction, true);
-      if (interaction.customId === "ranking_fixed_refresh") return handleFixedRankingRefresh(interaction);
+      if (interaction.customId === "panel_community") return await handleCommunityAccess(interaction);
+      if (interaction.customId === "panel_create_clan") return await interaction.showModal(createClanModal());
+      if (interaction.customId === "panel_join_clan") return await interaction.showModal(joinClanModal());
+      if (interaction.customId === "panel_edit") return await handlePanelEdit(interaction);
+      if (interaction.customId === "panel_ranking") return await handleRanking(interaction, true);
+      if (interaction.customId === "ranking_fixed_refresh") return await handleFixedRankingRefresh(interaction);
       if (interaction.customId.startsWith("clan_accept:") || interaction.customId.startsWith("clan_deny:")) {
-        return handleApproval(interaction);
+        return await handleApproval(interaction);
       }
       if (interaction.customId.startsWith("clan_invite_accept:") || interaction.customId.startsWith("clan_invite_deny:")) {
-        return handleInviteResponse(interaction);
+        return await handleInviteResponse(interaction);
       }
       if (interaction.customId.startsWith("reset_clans_confirm:") || interaction.customId.startsWith("reset_clans_cancel:")) {
-        return handleResetClansButton(interaction);
+        return await handleResetClansButton(interaction);
       }
       if (interaction.customId.startsWith("undo_clan_confirm:") || interaction.customId.startsWith("undo_clan_cancel:")) {
-        return handleUndoClanButton(interaction);
+        return await handleUndoClanButton(interaction);
       }
       if (interaction.customId.startsWith("rank_ok:") || interaction.customId.startsWith("rank_no:")) {
-        return handleResultButton(interaction);
+        return await handleResultButton(interaction);
       }
       if (interaction.customId.startsWith("rank_remove_ok:") || interaction.customId.startsWith("rank_remove_no:")) {
-        return handleRemoveResultButton(interaction);
+        return await handleRemoveResultButton(interaction);
       }
       if (interaction.customId.startsWith("rank_reset_ok:") || interaction.customId.startsWith("rank_reset_no:")) {
-        return handleResetPointsButton(interaction);
+        return await handleResetPointsButton(interaction);
       }
     }
 
     if (interaction.isModalSubmit()) {
       if (interaction.customId === "modal_create_clan") {
-        return createClan(
+        return await createClan(
           interaction,
           interaction.fields.getTextInputValue("clan_tag"),
           interaction.fields.getTextInputValue("clan_name")
         );
       }
       if (interaction.customId === "modal_join_clan") {
-        return requestJoin(interaction, interaction.fields.getTextInputValue("clan_tag"));
+        return await requestJoin(interaction, interaction.fields.getTextInputValue("clan_tag"));
       }
-      if (interaction.customId === "modal_edit_panel") return handlePanelEditSubmit(interaction);
+      if (interaction.customId === "modal_edit_panel") return await handlePanelEditSubmit(interaction);
     }
   } catch (error) {
     console.error(error);
-    const message = { content: "Nao foi possivel concluir essa acao. Tente novamente.", flags: MessageFlags.Ephemeral };
-    if (interaction.deferred || interaction.replied) await interaction.followUp(message).catch(() => null);
-    else await interaction.reply(message).catch(() => null);
+    const content = "Nao foi possivel concluir essa acao. Tente novamente.";
+    if (interaction.deferred && !interaction.replied) await interaction.editReply({ content }).catch(() => null);
+    else if (interaction.deferred || interaction.replied) {
+      await interaction.followUp({ content, flags: MessageFlags.Ephemeral }).catch(() => null);
+    } else {
+      await interaction.reply({ content, flags: MessageFlags.Ephemeral }).catch(() => null);
+    }
   }
+});
+
+client.on("error", (error) => {
+  console.error("Erro interno do cliente Discord:", error);
 });
 
 if (require.main === module) {
