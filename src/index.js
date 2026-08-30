@@ -65,6 +65,26 @@ function getClans(guildId) {
   return Object.values(getGuildState(guildId).clans);
 }
 
+function getRankingEntries(guildId) {
+  const guildState = getGuildState(guildId);
+  return getClans(guildId)
+    .map((clan) => ({
+      tag: clan.tag,
+      name: clan.name,
+      points: 0,
+      wins: 0,
+      losses: 0,
+      matches: 0,
+      ...guildState.ranking[clan.tag]
+    }))
+    .sort((first, second) =>
+      second.points - first.points ||
+      second.wins - first.wins ||
+      first.losses - second.losses ||
+      first.tag.localeCompare(second.tag)
+    );
+}
+
 function parseColor(color) {
   const normalized = color.trim().replace(/^#/, "");
   return /^[0-9A-F]{6}$/i.test(normalized) ? Number.parseInt(normalized, 16) : null;
@@ -88,6 +108,10 @@ function panelComponents(panel) {
     new ButtonBuilder()
       .setCustomId("panel_edit")
       .setLabel("Editar painel")
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId("panel_ranking")
+      .setLabel("Ranking")
       .setStyle(ButtonStyle.Secondary)
   );
 
@@ -118,6 +142,26 @@ function statusComponents(title, description, color = 0x5865f2) {
     .setAccentColor(color)
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent(`# ${title}\n${description}`)
+    );
+}
+
+function rankingComponents(guildId) {
+  const entries = getRankingEntries(guildId);
+  const table = entries.length === 0
+    ? "Nenhum clan cadastrado no momento."
+    : entries.slice(0, 20).map((entry, index) =>
+      `**${index + 1}. ${entry.tag}** - ${entry.points} pts\n-# ${entry.wins}V  |  ${entry.losses}D  |  ${entry.matches} partida(s)  |  ${entry.name}`
+    ).join("\n\n");
+
+  return new ContainerBuilder()
+    .setAccentColor(0xf59e0b)
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent("# Ranking de clans\nClassificacao oficial da comunidade.")
+    )
+    .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Large).setDivider(true))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(table))
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent("-# Criterios: pontos, vitorias, menos derrotas e ordem alfabetica.")
     );
 }
 
@@ -345,6 +389,40 @@ function undoClanWarningComponents(clan, guildId, userId) {
       )
     )
     .addActionRowComponents(undoClanButtons(guildId, clan.tag, userId));
+}
+
+function resultButtons(guildId, winnerTag, loserTag, points, userId, resultId) {
+  const encoded = `${guildId}:${winnerTag}:${loserTag}:${points}:${userId}:${resultId}`;
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`rank_ok:${encoded}`)
+      .setLabel("Confirmar resultado")
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId(`rank_no:${encoded}`)
+      .setLabel("Cancelar")
+      .setStyle(ButtonStyle.Secondary)
+  );
+}
+
+function resultWarningComponents(winner, loser, points, guildId, userId, resultId) {
+  return new ContainerBuilder()
+    .setAccentColor(0xf59e0b)
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        `# Confirmar resultado\n**${winner.tag} - ${winner.name}** venceu **${loser.tag} - ${loser.name}**.`
+      )
+    )
+    .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Large).setDivider(true))
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent(
+        `## Alteracao no ranking\n**Vencedora:** +${points} pontos e +1 vitoria\n**Perdedora:** +1 derrota\n**Partidas:** +1 para cada clan`
+      )
+    )
+    .addTextDisplayComponents(
+      new TextDisplayBuilder().setContent("-# Confira as tags antes de confirmar. O resultado sera salvo imediatamente.")
+    )
+    .addActionRowComponents(resultButtons(guildId, winner.tag, loser.tag, points, userId, resultId));
 }
 
 function createClanModal() {
@@ -1043,6 +1121,148 @@ function isPanelAdmin(interaction) {
     interaction.memberPermissions?.has(PermissionFlagsBits.Administrator);
 }
 
+async function handleRanking(interaction, ephemeral = false) {
+  const flags = MessageFlags.IsComponentsV2 |
+    (ephemeral ? MessageFlags.Ephemeral : 0);
+  return interaction.reply({
+    components: [rankingComponents(interaction.guild.id)],
+    flags
+  });
+}
+
+async function handleResultCommand(interaction) {
+  if (!isPanelAdmin(interaction)) {
+    return interaction.reply({
+      content: "Apenas a staff pode registrar resultados no ranking.",
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  const winnerTag = cleanTag(interaction.options.getString("vencedora", true));
+  const loserTag = cleanTag(interaction.options.getString("perdedora", true));
+  const points = interaction.options.getInteger("pontos", true);
+  const winner = getClan(interaction.guild.id, winnerTag);
+  const loser = getClan(interaction.guild.id, loserTag);
+
+  if (!winner || !loser) {
+    const missing = [!winner ? winnerTag : null, !loser ? loserTag : null].filter(Boolean).join(", ");
+    return interaction.reply({
+      content: `Clan(s) nao encontrado(s): **${missing}**. Confira as tags cadastradas.`,
+      flags: MessageFlags.Ephemeral
+    });
+  }
+  if (winner.tag === loser.tag) {
+    return interaction.reply({
+      content: "O clan vencedor e o perdedor precisam ser diferentes.",
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  const resultId = interaction.id;
+  return interaction.reply({
+    components: [resultWarningComponents(
+      winner,
+      loser,
+      points,
+      interaction.guild.id,
+      interaction.user.id,
+      resultId
+    )],
+    flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral
+  });
+}
+
+async function handleResultButton(interaction) {
+  const [action, guildId, winnerTag, loserTag, pointsValue, requestedBy, resultId] =
+    interaction.customId.split(":");
+
+  if (interaction.user.id !== requestedBy || !isPanelAdmin(interaction)) {
+    return interaction.reply({
+      content: "Somente o staff que informou o resultado pode confirmar.",
+      flags: MessageFlags.Ephemeral
+    });
+  }
+  if (interaction.guild.id !== guildId) {
+    return interaction.reply({ content: "Esse resultado pertence a outro servidor.", flags: MessageFlags.Ephemeral });
+  }
+  if (action === "rank_no") {
+    return interaction.update({
+      content: null,
+      embeds: [],
+      components: [statusComponents("Resultado cancelado", "Nenhum ponto foi alterado.", 0x5865f2)],
+      flags: MessageFlags.IsComponentsV2
+    });
+  }
+
+  const guildState = getGuildState(guildId);
+  if (guildState.matchHistory.some((match) => match.id === resultId)) {
+    return interaction.update({
+      content: null,
+      embeds: [],
+      components: [statusComponents("Resultado ja registrado", "Esta partida nao foi contabilizada novamente.", 0xf59e0b)],
+      flags: MessageFlags.IsComponentsV2
+    });
+  }
+
+  const winner = getClan(guildId, winnerTag);
+  const loser = getClan(guildId, loserTag);
+  const points = Number.parseInt(pointsValue, 10);
+  if (!winner || !loser || !Number.isInteger(points) || points < 1 || points > 100) {
+    return interaction.update({
+      content: null,
+      embeds: [],
+      components: [statusComponents("Resultado invalido", "Os clans ou a pontuacao nao estao mais disponiveis.", 0xef4444)],
+      flags: MessageFlags.IsComponentsV2
+    });
+  }
+
+  const winnerRanking = guildState.ranking[winner.tag] ||= {
+    tag: winner.tag,
+    name: winner.name,
+    points: 0,
+    wins: 0,
+    losses: 0,
+    matches: 0
+  };
+  const loserRanking = guildState.ranking[loser.tag] ||= {
+    tag: loser.tag,
+    name: loser.name,
+    points: 0,
+    wins: 0,
+    losses: 0,
+    matches: 0
+  };
+
+  winnerRanking.name = winner.name;
+  winnerRanking.points += points;
+  winnerRanking.wins += 1;
+  winnerRanking.matches += 1;
+  loserRanking.name = loser.name;
+  loserRanking.losses += 1;
+  loserRanking.matches += 1;
+  guildState.matchHistory.push({
+    id: resultId,
+    winnerTag: winner.tag,
+    loserTag: loser.tag,
+    points,
+    recordedBy: interaction.user.id,
+    recordedAt: new Date().toISOString()
+  });
+  guildState.matchHistory = guildState.matchHistory.slice(-100);
+  saveState();
+
+  return interaction.update({
+    content: null,
+    embeds: [],
+    components: [statusComponents(
+      "Resultado registrado",
+      `**${winner.tag}** venceu **${loser.tag}** e recebeu **${points} pontos**.\n\n**Pontuacao atual de ${winner.tag}:** ${winnerRanking.points} pts`,
+      0x22c55e
+    )],
+    flags: MessageFlags.IsComponentsV2
+  });
+}
+
 async function handlePanelCommand(interaction) {
   if (!isPanelAdmin(interaction)) {
     return interaction.reply({ content: "Apenas administradores podem publicar o painel.", flags: MessageFlags.Ephemeral });
@@ -1320,7 +1540,9 @@ async function handleUndoClanButton(interaction) {
     [clan],
     `Clan ${clan.tag} desfeito por ${interaction.user.tag}`
   );
-  delete getGuildState(guildId).clans[clan.tag];
+  const guildState = getGuildState(guildId);
+  delete guildState.clans[clan.tag];
+  delete guildState.ranking[clan.tag];
   clearPendingActionsForClan(guildId, clan.tag);
   saveState();
 
@@ -1360,7 +1582,10 @@ async function handleResetClansButton(interaction) {
   await interaction.deferUpdate();
   const clans = [...getClans(guildId)];
   const result = await deleteClanResources(interaction.guild, clans);
-  getGuildState(guildId).clans = {};
+  const guildState = getGuildState(guildId);
+  guildState.clans = {};
+  guildState.ranking = {};
+  guildState.matchHistory = [];
   clearPendingClanActions(guildId);
   saveState();
 
@@ -1417,8 +1642,13 @@ client.on("interactionCreate", async (interaction) => {
       return handleResetClansCommand(interaction);
     }
 
+    if (interaction.isChatInputCommand() && interaction.commandName === "ranking") {
+      return handleRanking(interaction);
+    }
+
     if (interaction.isChatInputCommand() && interaction.commandName === "clan") {
       const subcommand = interaction.options.getSubcommand();
+      if (subcommand === "resultado") return handleResultCommand(interaction);
       if (subcommand === "criar") {
         return createClan(interaction, interaction.options.getString("tag", true), interaction.options.getString("nome", true));
       }
@@ -1439,6 +1669,7 @@ client.on("interactionCreate", async (interaction) => {
       if (interaction.customId === "panel_create_clan") return interaction.showModal(createClanModal());
       if (interaction.customId === "panel_join_clan") return interaction.showModal(joinClanModal());
       if (interaction.customId === "panel_edit") return handlePanelEdit(interaction);
+      if (interaction.customId === "panel_ranking") return handleRanking(interaction, true);
       if (interaction.customId.startsWith("clan_accept:") || interaction.customId.startsWith("clan_deny:")) {
         return handleApproval(interaction);
       }
@@ -1450,6 +1681,9 @@ client.on("interactionCreate", async (interaction) => {
       }
       if (interaction.customId.startsWith("undo_clan_confirm:") || interaction.customId.startsWith("undo_clan_cancel:")) {
         return handleUndoClanButton(interaction);
+      }
+      if (interaction.customId.startsWith("rank_ok:") || interaction.customId.startsWith("rank_no:")) {
+        return handleResultButton(interaction);
       }
     }
 
@@ -1502,8 +1736,10 @@ module.exports = {
   clanPanelComponents,
   inviteComponents,
   panelComponents,
+  rankingComponents,
   requestComponents,
   resetWarningComponents,
+  resultWarningComponents,
   statusComponents,
   undoClanWarningComponents
 };

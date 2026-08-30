@@ -30,6 +30,8 @@ Bot para Discord que organiza membros por clan.
 - Os clans, membros, configuracao do painel e pedidos pendentes continuam salvos quando o bot reinicia.
 - Cada chat de clan recebe uma mensagem de orientacao com os comandos principais.
 - A central privada possui um seletor de usuarios para o lider convidar membros sem digitar comandos.
+- A staff registra partidas com `/clan resultado vencedora:ABC perdedora:XYZ pontos:3`.
+- `/ranking` mostra pontos, vitorias, derrotas e partidas de todos os clans.
 - Administradores podem usar `/resetclans`, com confirmacao, para apagar somente a estrutura dos clans.
 
 ## Como ligar

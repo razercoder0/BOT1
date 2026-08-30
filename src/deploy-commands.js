@@ -14,8 +14,40 @@ const commands = [
     .setDefaultMemberPermissions(null)
     .toJSON(),
   new SlashCommandBuilder()
+    .setName("ranking")
+    .setDescription("Mostra a classificacao atual dos clans")
+    .setDefaultMemberPermissions(null)
+    .toJSON(),
+  new SlashCommandBuilder()
     .setName("clan")
     .setDescription("Sistema de clans")
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName("resultado")
+        .setDescription("Registra o resultado de uma partida entre clans")
+        .addStringOption((option) =>
+          option
+            .setName("vencedora")
+            .setDescription("Tag do clan vencedor")
+            .setRequired(true)
+            .setMaxLength(8)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("perdedora")
+            .setDescription("Tag do clan perdedor")
+            .setRequired(true)
+            .setMaxLength(8)
+        )
+        .addIntegerOption((option) =>
+          option
+            .setName("pontos")
+            .setDescription("Pontos que o vencedor recebera")
+            .setRequired(true)
+            .setMinValue(1)
+            .setMaxValue(100)
+        )
+    )
     .addSubcommand((subcommand) =>
       subcommand
         .setName("criar")
@@ -111,7 +143,7 @@ async function main() {
 
   const rest = new REST({ version: "10" }).setToken(token);
   await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commands });
-  console.log("Comandos /painel, /clan e /resetclans registrados com sucesso.");
+  console.log("Comandos /painel, /ranking, /clan e /resetclans registrados com sucesso.");
 }
 
 main().catch((error) => {
