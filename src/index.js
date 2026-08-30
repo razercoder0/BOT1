@@ -2068,18 +2068,16 @@ client.on("interactionCreate", async (interaction) => {
   }
 });
 
-client.on("error", (error) => {
-  console.error("Erro interno do cliente Discord:", error);
-});
-
 if (require.main === module) {
   const webServer = startWebServer(client);
   let shuttingDown = false;
+  let loginTimeout = null;
 
   const shutdown = (signal) => {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log(`${signal} recebido. Desligando o bot com seguranca.`);
+    if (loginTimeout) clearTimeout(loginTimeout);
     webServer.close();
     client.destroy();
     process.exit(0);
@@ -2087,6 +2085,17 @@ if (require.main === module) {
 
   process.once("SIGTERM", () => shutdown("SIGTERM"));
   process.once("SIGINT", () => shutdown("SIGINT"));
+
+  loginTimeout = setTimeout(() => {
+    if (!client.isReady()) {
+      console.error("A conexao com o Discord excedeu 90 segundos. Reiniciando o servico.");
+      shutdown("LOGIN_TIMEOUT");
+    }
+  }, 90_000);
+  client.once("clientReady", () => {
+    clearTimeout(loginTimeout);
+    loginTimeout = null;
+  });
 
   client.login(process.env.DISCORD_TOKEN).catch((error) => {
     console.error("Nao foi possivel conectar o bot ao Discord:", error);
