@@ -38,6 +38,7 @@ const adminRoleIds = new Set(
     .map((roleId) => roleId.trim())
     .filter((roleId) => /^\d{17,20}$/.test(roleId))
 );
+const accessChannelId = process.env.ACCESS_CHANNEL_ID || "1543103438148341862";
 const accessChannelName = process.env.ACCESS_CHANNEL_NAME || "acesso";
 const clanCategoryName = process.env.CLAN_CATEGORY_NAME || "CLANS";
 
@@ -560,6 +561,17 @@ async function handleCommunityAccess(interaction) {
 
 async function ensureAccessChannel(guild) {
   const guildState = getGuildState(guild.id);
+  const configured = accessChannelId
+    ? guild.channels.cache.get(accessChannelId) ||
+      await guild.channels.fetch(accessChannelId).catch(() => null)
+    : null;
+
+  if (configured?.type === ChannelType.GuildText) {
+    guildState.panel.channelId = configured.id;
+    saveState();
+    return configured;
+  }
+
   const saved = guildState.panel.channelId
     ? guild.channels.cache.get(guildState.panel.channelId)
     : null;
