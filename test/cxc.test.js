@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { PermissionFlagsBits } = require("discord.js");
 
 const { commands } = require("../src/deploy-commands");
 const {
@@ -15,6 +16,7 @@ const {
   cxcSetupPlayersComponents,
   cxcSummaryComponents,
   cxcWinnerSelectionComponents,
+  clanPermissions,
   rankedHubComponents,
   rankedMyMatchesComponents
 } = require("../src/index");
@@ -83,6 +85,18 @@ test("cancelamento CXC aceita ID opcional para a staff", () => {
   const id = cancel.options.find((option) => option.name === "id");
   assert.ok(id);
   assert.equal(id.required, false);
+});
+
+test("lider de clan nao recebe permissao para gerenciar canais", () => {
+  const permissions = clanPermissions(
+    { roles: { everyone: { id: "everyone" } } },
+    { id: "clan-role" },
+    { id: "leader-role" }
+  );
+  const leader = permissions.find((overwrite) => overwrite.id === "leader-role");
+  assert.ok(leader);
+  assert.ok(!leader.allow.includes(PermissionFlagsBits.ManageChannels));
+  assert.ok(leader.deny.includes(PermissionFlagsBits.ManageChannels));
 });
 
 test("todos os paineis CXC geram Components V2 validos", () => {

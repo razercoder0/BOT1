@@ -1519,8 +1519,35 @@ function clanPermissions(guild, clanRole, leaderRole) {
   return [
     { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
     { id: clanRole.id, allow: common },
-    { id: leaderRole.id, allow: [...common, PermissionFlagsBits.ManageChannels] }
+    {
+      id: leaderRole.id,
+      allow: common,
+      deny: [PermissionFlagsBits.ManageChannels]
+    }
   ];
+}
+
+async function secureClanChannelPermissions(guild, clan) {
+  for (const channelId of [clan.textChannelId, clan.voiceChannelId]) {
+    const channel = guild.channels.cache.get(channelId) ||
+      await guild.channels.fetch(channelId).catch(() => null);
+    if (!channel || !channel.permissionOverwrites) continue;
+
+    await channel.permissionOverwrites.edit(
+      clan.leaderRoleId,
+      {
+        ViewChannel: true,
+        SendMessages: true,
+        ReadMessageHistory: true,
+        Connect: true,
+        Speak: true,
+        ManageChannels: false
+      },
+      { reason: `Protecao dos canais do clan ${clan.tag}` }
+    ).catch((error) => {
+      console.error(`Nao foi possivel proteger o canal ${channel.id} do clan ${clan.tag}:`, error);
+    });
+  }
 }
 
 async function createClan(interaction, rawTag, rawName) {
@@ -3935,6 +3962,7 @@ client.once("clientReady", async () => {
       await publishRankingPanel(guild);
       await publishRankedPanel(guild);
       for (const clan of getClans(guild.id)) {
+        await secureClanChannelPermissions(guild, clan);
         await ensureClanGuide(guild, clan);
       }
     } catch (error) {
@@ -4128,6 +4156,7 @@ module.exports = {
   clanCreatedComponents,
   clanGuideComponents,
   clanPanelComponents,
+  clanPermissions,
   inviteComponents,
   panelComponents,
   rankedHubComponents,

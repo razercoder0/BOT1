@@ -19,6 +19,7 @@ Bot para Discord que organiza membros por clan.
   - call privada;
   - chat publico geral, se ainda nao existir.
 - Quem cria o clan vira lider.
+- Lideres podem usar o chat e a call, mas nao podem renomear, mudar o assunto, alterar permissoes ou excluir esses canais.
 - Se alguem tentar entrar em um clan existente, o lider recebe um embed com botoes de aceitar ou recusar.
 - O lider pode usar:
   - `/clan convidar usuario:@membro`
