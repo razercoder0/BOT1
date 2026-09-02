@@ -43,7 +43,7 @@ Bot para Discord que organiza membros por clan.
 - Depois do aceite, o bot cria um canal privado para os dois lideres e para a staff.
 - Um lider seleciona o vencedor pelo painel e envia a print com `/cxc prova imagem:arquivo`.
 - O outro lider confirma ou contesta. Os pontos so entram no ranking depois da confirmacao.
-- Canais cancelados ou concluidos sao excluidos apos 10 segundos; canais contestados permanecem abertos ate a staff resolver.
+- Canais cancelados ou concluidos sao excluidos apos 10 segundos; canais antigos finalizados tambem sao limpos no reinicio. Canais contestados permanecem abertos ate a staff resolver.
 - `/cxc consultar`, `/cxc cancelar` e `/cxc historico` ajudam os lideres a acompanhar os confrontos.
 - A staff pode cancelar qualquer confronto com `/cxc cancelar id:ID`, inclusive antes do aceite.
 - A staff usa `/cxc encerrar`, `/cxc resolver vencedora:ABC` e `/cxc anular id:ID`.
