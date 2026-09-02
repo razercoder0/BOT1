@@ -50,7 +50,9 @@ function getGuildState(guildId) {
       clans: {},
       ranking: {},
       matchHistory: [],
-      rankingPanel: { channelId: null, messageId: null }
+      rankingPanel: { channelId: null, messageId: null },
+      rankedPanel: { channelId: null, messageId: null },
+      cxc: { matches: {} }
     };
   }
 
@@ -66,6 +68,9 @@ function getGuildState(guildId) {
   state.guilds[guildId].ranking ||= {};
   state.guilds[guildId].matchHistory ||= [];
   state.guilds[guildId].rankingPanel ||= { channelId: null, messageId: null };
+  state.guilds[guildId].rankedPanel ||= { channelId: null, messageId: null };
+  state.guilds[guildId].cxc ||= { matches: {} };
+  state.guilds[guildId].cxc.matches ||= {};
 
   return state.guilds[guildId];
 }

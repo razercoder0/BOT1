@@ -33,7 +33,18 @@ Bot para Discord que organiza membros por clan.
 - A staff registra partidas com `/clan resultado vencedora:ABC perdedora:XYZ pontos:3`.
 - `/ranking` mostra pontos, vitorias, derrotas e partidas de todos os clans.
 - O painel fixo do ranking e atualizado automaticamente quando os pontos mudam.
+- A Central Ranked fica fixa no canal `ranked`, sem reenviar mensagens a cada reinicio.
+- Pelo botao `Criar desafio`, o lider escolhe adversario, Gapple ou NoDebuff, formato de 1v1 ate 20v20 e MD1, MD3 ou MD5.
+- Os botoes `Meus confrontos` e `Ranking` mostram as informacoes em uma resposta privada.
 - `/retirarpontos` desfaz a partida mais recente informada e `/resetarpontos` zera somente a classificacao.
+- O lider desafia outro clan com `/cxc desafiar clan:ABC modo:Gapple jogadores:5 melhor_de:3`.
+- O convite CXC aparece no chat privado do clan adversario e somente o lider desafiado pode responder.
+- Depois do aceite, o bot cria um canal privado para os dois lideres e para a staff.
+- Um lider seleciona o vencedor pelo painel e envia a print com `/cxc prova imagem:arquivo`.
+- O outro lider confirma ou contesta. Os pontos so entram no ranking depois da confirmacao.
+- `/cxc consultar`, `/cxc cancelar` e `/cxc historico` ajudam os lideres a acompanhar os confrontos.
+- A staff usa `/cxc encerrar`, `/cxc resolver vencedora:ABC` e `/cxc anular id:ID`.
+- A staff usa `/cxc painel` para publicar ou atualizar manualmente a Central Ranked.
 - Administradores podem usar `/resetclans`, com confirmacao, para apagar somente a estrutura dos clans.
 
 ## Como ligar
@@ -60,7 +71,12 @@ ADMIN_ROLE_IDS=id_cargo_adm_1,id_cargo_adm_2,id_cargo_adm_3
 ACCESS_CHANNEL_ID=id_do_canal_de_acesso
 ACCESS_CHANNEL_NAME=acesso
 RANKING_CHANNEL_ID=id_do_canal_do_ranking
+RANKED_CHANNEL_ID=id_do_canal_da_central_ranked
+RANKED_CHANNEL_NAME=ranked
 CLAN_CATEGORY_NAME=CLANS
+CXC_CATEGORY_ID=id_da_categoria_dos_confrontos
+CXC_CATEGORY_NAME=CONFRONTOS CXC
+CXC_WIN_POINTS=3
 ```
 
 4. Registre os comandos:
@@ -75,7 +91,7 @@ npm run deploy
 npm start
 ```
 
-O bot cria e mantem o painel automaticamente. Um administrador tambem pode usar `/painel` para publicar ou atualizar a mensagem manualmente.
+O bot cria e mantem o painel de acesso automaticamente. Um administrador tambem pode usar `/painel` para publica-lo manualmente. A Central Ranked e localizada por `RANKED_CHANNEL_ID` ou por um canal chamado `ranked`; o bot nao cria esse canal e `/cxc painel` publica ou atualiza sua mensagem fixa.
 
 ## Render e health check
 
@@ -103,6 +119,9 @@ No convite do bot, marque estas permissoes:
 - Send Messages
 - View Channels
 - Read Message History
+- Manage Messages
+- Attach Files
+- Embed Links
 - Use Slash Commands
 
 Importante: o cargo do bot precisa ficar acima dos cargos de clan na lista de cargos do Discord.
@@ -110,3 +129,5 @@ Importante: o cargo do bot precisa ficar acima dos cargos de clan na lista de ca
 ## Dados
 
 Os dados ficam salvos automaticamente em `data/bot-data.json`. Guarde esse arquivo ao mover o bot para outro computador.
+
+No Render, use um disco persistente ou um banco de dados para preservar ranking e historico em novos deploys. Os canais CXC guardam metadados de recuperacao, mas o arquivo continua sendo a fonte completa dos dados.

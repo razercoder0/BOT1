@@ -43,6 +43,119 @@ const commands = [
     .setDefaultMemberPermissions(null)
     .toJSON(),
   new SlashCommandBuilder()
+    .setName("cxc")
+    .setDescription("Confrontos oficiais entre clans")
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName("painel")
+        .setDescription("Publica ou atualiza a Central Ranked")
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName("desafiar")
+        .setDescription("Desafia outro clan para um confronto")
+        .addStringOption((option) =>
+          option
+            .setName("clan")
+            .setDescription("Tag do clan adversario")
+            .setRequired(true)
+            .setMaxLength(8)
+        )
+        .addStringOption((option) =>
+          option
+            .setName("modo")
+            .setDescription("Modo do confronto")
+            .setRequired(true)
+            .addChoices(
+              { name: "Gapple", value: "gapple" },
+              { name: "NoDebuff", value: "nodebuff" }
+            )
+        )
+        .addIntegerOption((option) =>
+          option
+            .setName("jogadores")
+            .setDescription("Quantidade de jogadores por clan")
+            .setRequired(true)
+            .setMinValue(1)
+            .setMaxValue(20)
+        )
+        .addIntegerOption((option) =>
+          option
+            .setName("melhor_de")
+            .setDescription("Quantidade maxima de partidas")
+            .setRequired(true)
+            .addChoices(
+              { name: "MD1", value: 1 },
+              { name: "MD3", value: 3 },
+              { name: "MD5", value: 5 }
+            )
+        )
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName("consultar")
+        .setDescription("Mostra o confronto ativo do seu clan")
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName("cancelar")
+        .setDescription("Cancela um desafio que ainda nao foi aceito")
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName("prova")
+        .setDescription("Envia a print do resultado selecionado")
+        .addAttachmentOption((option) =>
+          option
+            .setName("imagem")
+            .setDescription("Print da tela mostrando a vitoria")
+            .setRequired(true)
+        )
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName("historico")
+        .setDescription("Mostra os confrontos recentes de um clan")
+        .addStringOption((option) =>
+          option
+            .setName("clan")
+            .setDescription("Tag do clan; deixe vazio para usar o seu")
+            .setRequired(false)
+            .setMaxLength(8)
+        )
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName("encerrar")
+        .setDescription("Staff encerra o confronto deste canal")
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName("resolver")
+        .setDescription("Staff resolve uma contestacao")
+        .addStringOption((option) =>
+          option
+            .setName("vencedora")
+            .setDescription("Tag do clan vencedor")
+            .setRequired(true)
+            .setMaxLength(8)
+        )
+    )
+    .addSubcommand((subcommand) =>
+      subcommand
+        .setName("anular")
+        .setDescription("Staff anula um CXC confirmado")
+        .addStringOption((option) =>
+          option
+            .setName("id")
+            .setDescription("ID exibido no painel ou no historico")
+            .setRequired(true)
+            .setMaxLength(20)
+        )
+    )
+    .setDefaultMemberPermissions(null)
+    .toJSON(),
+  new SlashCommandBuilder()
     .setName("clan")
     .setDescription("Sistema de clans")
     .addSubcommand((subcommand) =>
@@ -167,10 +280,14 @@ async function main() {
 
   const rest = new REST({ version: "10" }).setToken(token);
   await rest.put(Routes.applicationGuildCommands(clientId, guildId), { body: commands });
-  console.log("Comandos de clans e ranking registrados com sucesso.");
+  console.log("Comandos de clans, CXC e ranking registrados com sucesso.");
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}
+
+module.exports = { commands };
