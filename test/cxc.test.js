@@ -4,6 +4,7 @@ const { PermissionFlagsBits } = require("discord.js");
 
 const { commands } = require("../src/deploy-commands");
 const {
+  CXC_CHANNEL_DELETE_DELAY_MS,
   cxcChallengeComponents,
   cxcChannelTopic,
   cxcControlComponents,
@@ -164,13 +165,18 @@ test("convite e resultado possuem as acoes esperadas", () => {
 });
 
 test("metadados de recuperacao cabem no topico do canal", () => {
+  const deleteAt = new Date(Date.now() + CXC_CHANNEL_DELETE_DELAY_MS).toISOString();
   const topic = cxcChannelTopic({
     ...match,
     status: "RESULT_REPORTED",
     proofDeadline: new Date(Date.now() + 60_000).toISOString(),
     controlMessageId: "1543102577045012500",
-    resultMessageId: "1543102578886447129"
+    resultMessageId: "1543102578886447129",
+    deleteAt
   });
   assert.ok(topic.startsWith("CXC|"));
   assert.ok(topic.length <= 1024);
+  const metadata = JSON.parse(Buffer.from(topic.slice(4), "base64url").toString("utf8"));
+  assert.equal(metadata.z, deleteAt);
+  assert.equal(CXC_CHANNEL_DELETE_DELAY_MS, 10_000);
 });

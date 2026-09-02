@@ -39,6 +39,7 @@ const rankingPanelPublishLocks = new Map();
 const rankedPanelPublishLocks = new Map();
 const clanGuidePublishLocks = new Map();
 const cxcActionLocks = new Set();
+const cxcDeletionTimers = new Map();
 const legacyPublicChatSetting = process.env.PUBLIC_CHAT_NAME || "chat-publico";
 const publicChatId = process.env.PUBLIC_CHAT_ID || (/^\d{17,20}$/.test(legacyPublicChatSetting) ? legacyPublicChatSetting : null);
 const publicChatName = /^\d{17,20}$/.test(legacyPublicChatSetting) ? "chat-publico" : legacyPublicChatSetting;
@@ -63,6 +64,7 @@ const cxcWinPoints = Number.isInteger(configuredCxcPoints) && configuredCxcPoint
   ? configuredCxcPoints
   : 3;
 const cxcInvitationLifetime = 24 * 60 * 60 * 1000;
+const CXC_CHANNEL_DELETE_DELAY_MS = 10_000;
 const cxcOpenStatuses = new Set([
   "PENDING",
   "ACTIVE",
@@ -2020,7 +2022,8 @@ function cxcChannelTopic(match) {
     cm: match.controlMessageId,
     rm: match.resultMessageId,
     cb: match.confirmedBy,
-    ca: match.confirmedAt
+    ca: match.confirmedAt,
+    z: match.deleteAt
   };
   return `CXC|${Buffer.from(JSON.stringify(metadata), "utf8").toString("base64url")}`;
 }
@@ -2092,7 +2095,8 @@ function parseCxcChannelTopic(guildId, channel) {
     controlMessageId: metadata.cm,
     resultMessageId: metadata.rm,
     confirmedBy: metadata.cb,
-    confirmedAt: metadata.ca
+    confirmedAt: metadata.ca,
+    deleteAt: metadata.z
   };
 }
 
@@ -2122,6 +2126,10 @@ async function recoverCxcChannels(guild) {
         200
       );
       if (control) match.controlMessageId = control.id;
+    }
+
+    if (match.deleteAt && ["CONFIRMED", "CANCELLED", "ANNULLED"].includes(match.status)) {
+      await scheduleCxcChannelDeletion(guild, match, "Finalizacao recuperada apos reinicio");
     }
   }
   if (recovered > 0) {
@@ -2154,6 +2162,70 @@ async function refreshCxcControl(guild, match) {
     components: [cxcControlComponents(match, challenger, challenged)],
     flags: MessageFlags.IsComponentsV2
   }).catch(() => null);
+}
+
+async function deleteCxcChannel(guild, match, reason) {
+  cxcDeletionTimers.delete(match.id);
+  const channel = guild.channels.cache.get(match.channelId) ||
+    await guild.channels.fetch(match.channelId).catch(() => null);
+
+  if (!channel) {
+    match.channelDeletedAt ||= new Date().toISOString();
+    delete match.deleteAt;
+    saveState();
+    return true;
+  }
+
+  try {
+    await channel.delete(reason);
+    match.channelDeletedAt = new Date().toISOString();
+    delete match.deleteAt;
+    saveState();
+    return true;
+  } catch (error) {
+    console.error(`Nao foi possivel excluir o canal CXC ${match.channelId}:`, error);
+    return false;
+  }
+}
+
+async function scheduleCxcChannelDeletion(guild, match, reason) {
+  if (!match.channelId || match.channelDeletedAt || cxcDeletionTimers.has(match.id)) {
+    return false;
+  }
+
+  const requestedAt = match.deleteAt
+    ? new Date(match.deleteAt).getTime()
+    : Date.now() + CXC_CHANNEL_DELETE_DELAY_MS;
+  const deleteAt = Number.isFinite(requestedAt)
+    ? Math.max(Date.now(), requestedAt)
+    : Date.now() + CXC_CHANNEL_DELETE_DELAY_MS;
+  match.deleteAt = new Date(deleteAt).toISOString();
+  saveState();
+
+  const channel = guild.channels.cache.get(match.channelId) ||
+    await guild.channels.fetch(match.channelId).catch(() => null);
+  if (!channel) {
+    await deleteCxcChannel(guild, match, reason);
+    return true;
+  }
+
+  await channel.setTopic(cxcChannelTopic(match)).catch(() => null);
+  await channel.send({
+    components: [statusComponents(
+      "Confronto finalizado",
+      `Este canal sera excluido <t:${Math.floor(deleteAt / 1000)}:R>. O resultado e o historico ja foram salvos.`,
+      match.status === "CONFIRMED" ? 0x22c55e : 0xef4444
+    )],
+    flags: MessageFlags.IsComponentsV2
+  }).catch(() => null);
+
+  const timer = setTimeout(() => {
+    deleteCxcChannel(guild, match, reason).catch((error) => {
+      console.error(`Falha inesperada ao excluir o canal CXC ${match.channelId}:`, error);
+    });
+  }, Math.max(0, deleteAt - Date.now()));
+  cxcDeletionTimers.set(match.id, timer);
+  return true;
 }
 
 async function applyCxcResult(guild, match, winnerTag, recordedBy) {
@@ -2709,9 +2781,15 @@ async function handleCxcCancelCommand(interaction) {
     }).catch(() => null);
     await refreshCxcControl(interaction.guild, match);
 
-    return interaction.editReply(
+    const response = await interaction.editReply(
       `O confronto **${match.challengerTag} x ${match.challengedTag}** foi cancelado sem alterar o ranking.\n**ID:** ${match.id}`
     );
+    await scheduleCxcChannelDeletion(
+      interaction.guild,
+      match,
+      `CXC ${match.id} cancelado pela staff`
+    );
+    return response;
   } finally {
     cxcActionLocks.delete(match.id);
   }
@@ -2761,7 +2839,15 @@ async function handleCxcCloseCommand(interaction) {
   saveState();
   await refreshRankedPanel(interaction.guild);
   await refreshCxcControl(interaction.guild, match);
-  return interaction.editReply(`O confronto **${match.id}** foi encerrado sem alterar o ranking.`);
+  const response = await interaction.editReply(
+    `O confronto **${match.id}** foi encerrado sem alterar o ranking. O canal sera excluido em 10 segundos.`
+  );
+  await scheduleCxcChannelDeletion(
+    interaction.guild,
+    match,
+    `CXC ${match.id} encerrado pela staff`
+  );
+  return response;
 }
 
 async function handleCxcResolveCommand(interaction) {
@@ -2797,9 +2883,15 @@ async function handleCxcResolveCommand(interaction) {
   try {
     const ranking = await applyCxcResult(interaction.guild, match, winnerTag, interaction.user.id);
     await refreshCxcControl(interaction.guild, match);
-    return interaction.editReply(
-      `Contestacao resolvida. **${winnerTag}** recebeu **${match.points} pontos** e agora possui **${ranking.points} pontos**.`
+    const response = await interaction.editReply(
+      `Contestacao resolvida. **${winnerTag}** recebeu **${match.points} pontos** e agora possui **${ranking.points} pontos**. O canal sera excluido em 10 segundos.`
     );
+    await scheduleCxcChannelDeletion(
+      interaction.guild,
+      match,
+      `CXC ${match.id} resolvido pela staff`
+    );
+    return response;
   } finally {
     cxcActionLocks.delete(match.id);
   }
@@ -3936,15 +4028,21 @@ async function handleCxcResultButton(interaction) {
       interaction.user.id
     );
     await refreshCxcControl(interaction.guild, match);
-    return interaction.editReply({
+    const response = await interaction.editReply({
       content: null,
       embeds: [],
       components: [statusComponents(
         "Resultado confirmado",
-        `**${match.winnerTag}** venceu **${match.loserTag}** e recebeu **${match.points} pontos**.\n\n**Pontuacao atual:** ${ranking.points} pts`,
+        `**${match.winnerTag}** venceu **${match.loserTag}** e recebeu **${match.points} pontos**.\n\n**Pontuacao atual:** ${ranking.points} pts\nEste canal sera excluido em 10 segundos.`,
         0x22c55e
       )]
     });
+    await scheduleCxcChannelDeletion(
+      interaction.guild,
+      match,
+      `CXC ${match.id} concluido com resultado confirmado`
+    );
+    return response;
   } finally {
     cxcActionLocks.delete(match.id);
   }
@@ -4141,6 +4239,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  CXC_CHANNEL_DELETE_DELAY_MS,
   cxcChallengeComponents,
   cxcChannelTopic,
   cxcControlComponents,
