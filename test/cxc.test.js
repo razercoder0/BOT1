@@ -76,6 +76,15 @@ test("registra todos os subcomandos CXC", () => {
   ]);
 });
 
+test("cancelamento CXC aceita ID opcional para a staff", () => {
+  const command = commands.find((entry) => entry.name === "cxc");
+  const cancel = command.options.find((option) => option.name === "cancelar");
+  assert.ok(cancel);
+  const id = cancel.options.find((option) => option.name === "id");
+  assert.ok(id);
+  assert.equal(id.required, false);
+});
+
 test("todos os paineis CXC geram Components V2 validos", () => {
   const components = [
     cxcChallengeComponents(match, challenger, challenged),

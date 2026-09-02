@@ -43,6 +43,7 @@ Bot para Discord que organiza membros por clan.
 - Um lider seleciona o vencedor pelo painel e envia a print com `/cxc prova imagem:arquivo`.
 - O outro lider confirma ou contesta. Os pontos so entram no ranking depois da confirmacao.
 - `/cxc consultar`, `/cxc cancelar` e `/cxc historico` ajudam os lideres a acompanhar os confrontos.
+- A staff pode cancelar qualquer confronto com `/cxc cancelar id:ID`, inclusive antes do aceite.
 - A staff usa `/cxc encerrar`, `/cxc resolver vencedora:ABC` e `/cxc anular id:ID`.
 - A staff usa `/cxc painel` para publicar ou atualizar manualmente a Central Ranked.
 - Administradores podem usar `/resetclans`, com confirmacao, para apagar somente a estrutura dos clans.

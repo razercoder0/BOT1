@@ -99,7 +99,14 @@ const commands = [
     .addSubcommand((subcommand) =>
       subcommand
         .setName("cancelar")
-        .setDescription("Cancela um desafio que ainda nao foi aceito")
+        .setDescription("Cancela um desafio; staff pode informar qualquer ID")
+        .addStringOption((option) =>
+          option
+            .setName("id")
+            .setDescription("Staff informa o ID; o lider pode deixar vazio")
+            .setRequired(false)
+            .setMaxLength(20)
+        )
     )
     .addSubcommand((subcommand) =>
       subcommand

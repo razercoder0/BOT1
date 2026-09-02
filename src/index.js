@@ -2590,48 +2590,104 @@ async function handleCxcConsultCommand(interaction) {
 
 async function handleCxcCancelCommand(interaction) {
   const clan = findClanByLeader(interaction.guild.id, interaction.user.id);
-  if (!clan) {
+  const staff = isPanelAdmin(interaction);
+  const requestedId = interaction.options.getString("id")?.trim();
+
+  if (requestedId && !staff) {
     return interaction.reply({
-      content: "Apenas o lider de um clan pode cancelar um desafio.",
-      flags: MessageFlags.Ephemeral
-    });
-  }
-  const match = Object.values(getCxcMatches(interaction.guild.id))
-    .filter((candidate) =>
-      candidate.status === "PENDING" &&
-      candidate.challengerTag === clan.tag &&
-      candidate.createdBy === interaction.user.id
-    )
-    .sort((first, second) => second.createdAt.localeCompare(first.createdAt))[0];
-  if (!match) {
-    return interaction.reply({
-      content: "Voce nao possui um desafio pendente para cancelar.",
+      content: "Somente a staff pode cancelar um confronto pelo ID.",
       flags: MessageFlags.Ephemeral
     });
   }
 
+  let match = requestedId
+    ? getCxcMatch(interaction.guild.id, requestedId)
+    : null;
+
+  if (!match && staff && !requestedId) {
+    match = findCxcByChannel(interaction.guild.id, interaction.channelId);
+  }
+
+  if (!match && clan && !requestedId) {
+    match = Object.values(getCxcMatches(interaction.guild.id))
+      .filter((candidate) =>
+        candidate.status === "PENDING" &&
+        candidate.challengerTag === clan.tag &&
+        candidate.createdBy === interaction.user.id
+      )
+      .sort((first, second) => second.createdAt.localeCompare(first.createdAt))[0];
+  }
+
+  if (!match) {
+    return interaction.reply({
+      content: staff
+        ? "Confronto nao encontrado. Informe o ID exibido no convite: `/cxc cancelar id:ID`."
+        : "Apenas o lider desafiante pode cancelar o proprio convite pendente.",
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  if (!staff && (
+    match.status !== "PENDING" ||
+    match.challengerTag !== clan?.tag ||
+    match.createdBy !== interaction.user.id
+  )) {
+    return interaction.reply({
+      content: "Apenas o lider desafiante pode cancelar o proprio convite pendente.",
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  if (!cxcOpenStatuses.has(match.status)) {
+    return interaction.reply({
+      content: `Este confronto ja foi encerrado: **${cxcStatusLabel(match.status)}**.`,
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  if (cxcActionLocks.has(match.id)) {
+    return interaction.reply({
+      content: "Este confronto ja esta sendo atualizado.",
+      flags: MessageFlags.Ephemeral
+    });
+  }
+
+  cxcActionLocks.add(match.id);
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-  match.status = "CANCELLED";
-  match.cancelledBy = interaction.user.id;
-  match.cancelledAt = new Date().toISOString();
-  saveState();
-  await refreshRankedPanel(interaction.guild);
-  const invitation = await fetchCxcMessage(
-    interaction.guild,
-    match.invitationChannelId,
-    match.invitationMessageId
-  );
-  await invitation?.edit({
-    content: null,
-    embeds: [],
-    components: [cxcClosedInvitationComponents(
-      match,
-      "Desafio cancelado",
-      `O lider do clan **${match.challengerTag}** cancelou este convite.`
-    )],
-    flags: MessageFlags.IsComponentsV2
-  }).catch(() => null);
-  return interaction.editReply(`O desafio **${match.id}** foi cancelado.`);
+  try {
+    match.status = "CANCELLED";
+    match.cancelledBy = interaction.user.id;
+    match.cancelledAt = new Date().toISOString();
+    saveState();
+    await refreshRankedPanel(interaction.guild);
+
+    const cancelledBy = staff
+      ? `A staff <@${interaction.user.id}> cancelou este confronto.`
+      : `O lider do clan **${match.challengerTag}** cancelou este convite.`;
+    const invitation = await fetchCxcMessage(
+      interaction.guild,
+      match.invitationChannelId,
+      match.invitationMessageId
+    );
+    await invitation?.edit({
+      content: null,
+      embeds: [],
+      components: [cxcClosedInvitationComponents(
+        match,
+        "Desafio cancelado",
+        cancelledBy,
+        0xef4444
+      )],
+      flags: MessageFlags.IsComponentsV2
+    }).catch(() => null);
+    await refreshCxcControl(interaction.guild, match);
+
+    return interaction.editReply(
+      `O confronto **${match.challengerTag} x ${match.challengedTag}** foi cancelado sem alterar o ranking.\n**ID:** ${match.id}`
+    );
+  } finally {
+    cxcActionLocks.delete(match.id);
+  }
 }
 
 async function handleCxcHistoryCommand(interaction) {
