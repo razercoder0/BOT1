@@ -20,7 +20,13 @@ const {
   TextInputStyle,
   UserSelectMenuBuilder
 } = require("discord.js");
-const { getGuildState, saveState, state } = require("./store");
+const {
+  flushState,
+  getGuildState,
+  initializeStore,
+  saveState,
+  state
+} = require("./store");
 const { startWebServer } = require("./web-server");
 
 const client = new Client({
@@ -4219,23 +4225,29 @@ if (require.main === module) {
   let shuttingDown = false;
   let loginTimeout = null;
 
-  const shutdown = (signal) => {
+  const shutdown = async (signal) => {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log(`${signal} recebido. Desligando o bot com seguranca.`);
     if (loginTimeout) clearTimeout(loginTimeout);
     webServer.close();
     client.destroy();
+    await Promise.race([
+      flushState(),
+      new Promise((resolve) => setTimeout(resolve, 5_000))
+    ]).catch((error) => {
+      console.error("Nao foi possivel concluir a gravacao antes de desligar:", error);
+    });
     process.exit(0);
   };
 
-  process.once("SIGTERM", () => shutdown("SIGTERM"));
-  process.once("SIGINT", () => shutdown("SIGINT"));
+  process.once("SIGTERM", () => void shutdown("SIGTERM"));
+  process.once("SIGINT", () => void shutdown("SIGINT"));
 
   loginTimeout = setTimeout(() => {
     if (!client.isReady()) {
       console.error("A conexao com o Discord excedeu 90 segundos. Reiniciando o servico.");
-      shutdown("LOGIN_TIMEOUT");
+      void shutdown("LOGIN_TIMEOUT");
     }
   }, 90_000);
   client.once("clientReady", () => {
@@ -4243,10 +4255,12 @@ if (require.main === module) {
     loginTimeout = null;
   });
 
-  client.login(process.env.DISCORD_TOKEN).catch((error) => {
-    console.error("Nao foi possivel conectar o bot ao Discord:", error);
-    shutdown("LOGIN_ERROR");
-  });
+  initializeStore()
+    .then(() => client.login(process.env.DISCORD_TOKEN))
+    .catch((error) => {
+      console.error("Nao foi possivel iniciar o armazenamento ou conectar ao Discord:", error);
+      void shutdown("STARTUP_ERROR");
+    });
 }
 
 module.exports = {

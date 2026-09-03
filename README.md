@@ -66,6 +66,8 @@ npm install
 DISCORD_TOKEN=token_do_bot
 CLIENT_ID=id_do_aplicativo_do_bot
 GUILD_ID=id_do_servidor
+SUPABASE_URL=https://seu-projeto.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=sb_secret_sua_chave
 PUBLIC_CHAT_ID=id_do_chat_publico_existente
 PUBLIC_CHAT_NAME=chat-publico
 CREATE_PUBLIC_CHAT=false
@@ -82,13 +84,15 @@ CXC_CATEGORY_NAME=CONFRONTOS CXC
 CXC_WIN_POINTS=3
 ```
 
-4. Registre os comandos:
+4. No Supabase, abra o **SQL Editor**, cole o conteudo de supabase/schema.sql e clique em **Run**.
+
+5. Registre os comandos:
 
 ```bash
 npm run deploy
 ```
 
-5. Ligue o bot:
+6. Ligue o bot:
 
 ```bash
 npm start
@@ -131,6 +135,8 @@ Importante: o cargo do bot precisa ficar acima dos cargos de clan na lista de ca
 
 ## Dados
 
-Os dados ficam salvos automaticamente em `data/bot-data.json`. Guarde esse arquivo ao mover o bot para outro computador.
+Com `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` configurados, o bot carrega e salva no Supabase todos os clans, pontos, confrontos, convites e configuracoes. Cada alteracao tambem gera uma copia local em `data/bot-data.json`.
 
-No Render, use um disco persistente ou um banco de dados para preservar ranking e historico em novos deploys. Os canais CXC guardam metadados de recuperacao, mas o arquivo continua sendo a fonte completa dos dados.
+Na primeira inicializacao, se a tabela estiver vazia, o arquivo local existente e enviado automaticamente ao Supabase. Depois disso, o Supabase passa a ser a fonte principal e os dados sobrevivem a reinicios e deploys no Render.
+
+Use somente a **Secret key** (`sb_secret_...`) no servidor. Nunca envie essa chave em mensagens, imagens ou para o GitHub. Sem as variaveis do Supabase, o bot continua funcionando no modo local, mas o Render pode apagar esse arquivo em novos deploys.
