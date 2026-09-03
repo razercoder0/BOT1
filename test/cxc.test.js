@@ -4,8 +4,10 @@ const { PermissionFlagsBits } = require("discord.js");
 
 const { commands } = require("../src/deploy-commands");
 const {
+  CXC_ACTION_LOCK_TIMEOUT_MS,
   CXC_CHANNEL_DELETE_DELAY_MS,
   CXC_DELETION_SWEEP_INTERVAL_MS,
+  ExpiringLockSet,
   cxcChallengeComponents,
   cxcChannelTopic,
   cxcControlComponents,
@@ -62,6 +64,16 @@ function collectCustomIds(value, found = []) {
   }
   return found;
 }
+
+test("trava CXC expira sem deixar o confronto preso", () => {
+  let now = 1_000;
+  const locks = new ExpiringLockSet(30_000, () => now);
+  locks.add("match");
+  assert.equal(locks.has("match"), true);
+  now += 30_001;
+  assert.equal(locks.has("match"), false);
+  assert.equal(CXC_ACTION_LOCK_TIMEOUT_MS, 30_000);
+});
 
 test("registra todos os subcomandos CXC", () => {
   const command = commands.find((entry) => entry.name === "cxc");

@@ -51,6 +51,8 @@ test("carrega e salva o estado usando a Secret key do Supabase", async () => {
     assert.equal(store.state.guilds.guild.ranking.ABC.points, 7);
     assert.match(requests[0].url, /^https:\/\/example\.supabase\.co\/rest\/v1\/bot_state\?/);
     assert.doesNotMatch(requests[0].url, /rest\/v1\/rest\/v1/);
+    assert.ok(requests[0].options.signal instanceof AbortSignal);
+    assert.equal(store.SUPABASE_REQUEST_TIMEOUT_MS, 5_000);
     assert.equal(requests[0].options.headers.apikey, "sb_secret_test");
     assert.equal(requests[0].options.headers.Authorization, undefined);
 

@@ -12,6 +12,7 @@ const supabaseUrl = (process.env.SUPABASE_URL || "")
   .replace(/\/rest\/v1$/i, "");
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || "";
 const supabaseStateId = process.env.SUPABASE_STATE_ID || "discord-clan-bot";
+const SUPABASE_REQUEST_TIMEOUT_MS = 5_000;
 
 const defaultPanel = {
   title: "Bem-vindo a nossa comunidade",
@@ -93,10 +94,22 @@ function supabaseHeaders(extra = {}) {
 }
 
 async function requestSupabase(pathname, options = {}) {
-  const response = await fetch(supabaseUrl + "/rest/v1/" + pathname, {
-    ...options,
-    headers: supabaseHeaders(options.headers)
-  });
+  const controller = options.signal ? null : new AbortController();
+  const timeout = controller
+    ? setTimeout(() => controller.abort(), SUPABASE_REQUEST_TIMEOUT_MS)
+    : null;
+  timeout?.unref?.();
+
+  let response;
+  try {
+    response = await fetch(supabaseUrl + "/rest/v1/" + pathname, {
+      ...options,
+      signal: options.signal || controller.signal,
+      headers: supabaseHeaders(options.headers)
+    });
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     const body = await response.text();
@@ -231,6 +244,7 @@ function getGuildState(guildId) {
 }
 
 module.exports = {
+  SUPABASE_REQUEST_TIMEOUT_MS,
   flushState,
   getGuildState,
   hasSupabaseConfig,

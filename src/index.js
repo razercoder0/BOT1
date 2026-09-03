@@ -29,6 +29,33 @@ const {
 } = require("./store");
 const { startWebServer } = require("./web-server");
 
+class ExpiringLockSet {
+  constructor(lifetimeMs, now = Date.now) {
+    this.lifetimeMs = lifetimeMs;
+    this.now = now;
+    this.locks = new Map();
+  }
+
+  has(key) {
+    const expiresAt = this.locks.get(key);
+    if (!expiresAt) return false;
+    if (expiresAt <= this.now()) {
+      this.locks.delete(key);
+      return false;
+    }
+    return true;
+  }
+
+  add(key) {
+    this.locks.set(key, this.now() + this.lifetimeMs);
+    return this;
+  }
+
+  delete(key) {
+    return this.locks.delete(key);
+  }
+}
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -44,7 +71,8 @@ const panelPublishLocks = new Map();
 const rankingPanelPublishLocks = new Map();
 const rankedPanelPublishLocks = new Map();
 const clanGuidePublishLocks = new Map();
-const cxcActionLocks = new Set();
+const CXC_ACTION_LOCK_TIMEOUT_MS = 30_000;
+const cxcActionLocks = new ExpiringLockSet(CXC_ACTION_LOCK_TIMEOUT_MS);
 const cxcDeletionTimers = new Map();
 let cxcDeletionSweepTimer = null;
 const legacyPublicChatSetting = process.env.PUBLIC_CHAT_NAME || "chat-publico";
@@ -4332,8 +4360,10 @@ if (require.main === module) {
 }
 
 module.exports = {
+  CXC_ACTION_LOCK_TIMEOUT_MS,
   CXC_CHANNEL_DELETE_DELAY_MS,
   CXC_DELETION_SWEEP_INTERVAL_MS,
+  ExpiringLockSet,
   cxcChallengeComponents,
   cxcChannelTopic,
   cxcControlComponents,
