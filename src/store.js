@@ -6,7 +6,10 @@ const dataFile = process.env.BOT_DATA_FILE
   ? path.resolve(process.env.BOT_DATA_FILE)
   : path.join(defaultDataDirectory, "bot-data.json");
 const dataDirectory = path.dirname(dataFile);
-const supabaseUrl = (process.env.SUPABASE_URL || "").replace(/\/$/, "");
+const supabaseUrl = (process.env.SUPABASE_URL || "")
+  .trim()
+  .replace(/\/+$/, "")
+  .replace(/\/rest\/v1$/i, "");
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || "";
 const supabaseStateId = process.env.SUPABASE_STATE_ID || "discord-clan-bot";
 

@@ -14,7 +14,7 @@ test("carrega e salva o estado usando a Secret key do Supabase", async () => {
   };
   const requests = [];
 
-  process.env.SUPABASE_URL = "https://example.supabase.co";
+  process.env.SUPABASE_URL = "https://example.supabase.co/rest/v1/";
   process.env.SUPABASE_SERVICE_ROLE_KEY = "sb_secret_test";
   process.env.BOT_DATA_FILE = path.join(temporaryDirectory, "bot-data.json");
   global.fetch = async (url, options = {}) => {
@@ -49,6 +49,8 @@ test("carrega e salva o estado usando a Secret key do Supabase", async () => {
     const loaded = await store.initializeStore();
     assert.equal(loaded.source, "supabase");
     assert.equal(store.state.guilds.guild.ranking.ABC.points, 7);
+    assert.match(requests[0].url, /^https:\/\/example\.supabase\.co\/rest\/v1\/bot_state\?/);
+    assert.doesNotMatch(requests[0].url, /rest\/v1\/rest\/v1/);
     assert.equal(requests[0].options.headers.apikey, "sb_secret_test");
     assert.equal(requests[0].options.headers.Authorization, undefined);
 
