@@ -46,6 +46,7 @@ const rankedPanelPublishLocks = new Map();
 const clanGuidePublishLocks = new Map();
 const cxcActionLocks = new Set();
 const cxcDeletionTimers = new Map();
+let cxcDeletionSweepTimer = null;
 const legacyPublicChatSetting = process.env.PUBLIC_CHAT_NAME || "chat-publico";
 const publicChatId = process.env.PUBLIC_CHAT_ID || (/^\d{17,20}$/.test(legacyPublicChatSetting) ? legacyPublicChatSetting : null);
 const publicChatName = /^\d{17,20}$/.test(legacyPublicChatSetting) ? "chat-publico" : legacyPublicChatSetting;
@@ -71,6 +72,7 @@ const cxcWinPoints = Number.isInteger(configuredCxcPoints) && configuredCxcPoint
   : 3;
 const cxcInvitationLifetime = 24 * 60 * 60 * 1000;
 const CXC_CHANNEL_DELETE_DELAY_MS = 10_000;
+const CXC_DELETION_SWEEP_INTERVAL_MS = 15_000;
 const cxcOpenStatuses = new Set([
   "PENDING",
   "ACTIVE",
@@ -2178,6 +2180,12 @@ async function deleteCxcChannel(guild, match, reason) {
     try {
       channel = await guild.channels.fetch(match.channelId);
     } catch (error) {
+      if (error?.code === 10003 || error?.rawError?.code === 10003) {
+        match.channelDeletedAt ||= new Date().toISOString();
+        delete match.deleteAt;
+        saveState();
+        return true;
+      }
       console.error(`Nao foi possivel localizar o canal CXC ${match.channelId}:`, error);
       return false;
     }
@@ -2195,6 +2203,7 @@ async function deleteCxcChannel(guild, match, reason) {
     match.channelDeletedAt = new Date().toISOString();
     delete match.deleteAt;
     saveState();
+    console.log(`Canal CXC ${match.channelId} excluido com sucesso.`);
     return true;
   } catch (error) {
     console.error(`Nao foi possivel excluir o canal CXC ${match.channelId}:`, error);
@@ -2249,6 +2258,62 @@ async function scheduleCxcChannelDeletion(guild, match, reason) {
   return true;
 }
 
+async function sweepCxcChannelDeletions(guild) {
+  for (const match of Object.values(getCxcMatches(guild.id))) {
+    if (!match.channelId || match.channelDeletedAt || !cxcClosedStatuses.has(match.status)) {
+      continue;
+    }
+
+    const deleteAt = match.deleteAt ? new Date(match.deleteAt).getTime() : NaN;
+    if (!Number.isFinite(deleteAt)) {
+      await scheduleCxcChannelDeletion(guild, match, "Limpeza automatica de CXC finalizado");
+      continue;
+    }
+
+    if (deleteAt > Date.now()) {
+      if (!cxcDeletionTimers.has(match.id)) {
+        await scheduleCxcChannelDeletion(guild, match, "Limpeza automatica de CXC finalizado");
+      }
+      continue;
+    }
+
+    // Da ao temporizador original uma janela para concluir antes de assumir a exclusao.
+    if (Date.now() - deleteAt < 30_000) continue;
+    const scheduledTimer = cxcDeletionTimers.get(match.id);
+    if (scheduledTimer) clearTimeout(scheduledTimer);
+    cxcDeletionTimers.delete(match.id);
+
+    const deleted = await deleteCxcChannel(
+      guild,
+      match,
+      "CXC " + match.id + " removido pela limpeza automatica"
+    );
+    if (!deleted) {
+      match.deleteAt = new Date(Date.now() + 60_000).toISOString();
+      saveState();
+      await scheduleCxcChannelDeletion(guild, match, "Nova tentativa da limpeza automatica");
+    }
+  }
+}
+
+function startCxcDeletionSweep() {
+  if (cxcDeletionSweepTimer) return;
+  cxcDeletionSweepTimer = setInterval(() => {
+    for (const guild of client.guilds.cache.values()) {
+      sweepCxcChannelDeletions(guild).catch((error) => {
+        console.error("Falha na limpeza automatica de CXC do servidor " + guild.id + ":", error);
+      });
+    }
+  }, CXC_DELETION_SWEEP_INTERVAL_MS);
+}
+
+function stopCxcDeletionSweep() {
+  if (cxcDeletionSweepTimer) clearInterval(cxcDeletionSweepTimer);
+  cxcDeletionSweepTimer = null;
+  for (const timer of cxcDeletionTimers.values()) clearTimeout(timer);
+  cxcDeletionTimers.clear();
+}
+
 async function applyCxcResult(guild, match, winnerTag, recordedBy) {
   const guildState = getGuildState(guild.id);
   const winner = getClan(guild.id, winnerTag);
@@ -2266,7 +2331,7 @@ async function applyCxcResult(guild, match, winnerTag, recordedBy) {
     match.winnerTag = winner.tag;
     match.loserTag = loser.tag;
     match.matchHistoryId = historyId;
-    saveState();
+    await saveState();
     return guildState.ranking[winner.tag];
   }
 
@@ -2311,7 +2376,7 @@ async function applyCxcResult(guild, match, winnerTag, recordedBy) {
   match.confirmedBy = recordedBy;
   match.confirmedAt = new Date().toISOString();
   match.matchHistoryId = historyId;
-  saveState();
+  await saveState();
   await refreshRankingPanel(guild);
   await refreshRankedPanel(guild);
   return winnerRanking;
@@ -4084,6 +4149,7 @@ client.once("clientReady", async () => {
       console.error(`Nao foi possivel preparar o painel no servidor ${guild.id}:`, error);
     }
   }
+  startCxcDeletionSweep();
 });
 
 client.on("guildMemberAdd", async (member) => {
@@ -4230,6 +4296,7 @@ if (require.main === module) {
     shuttingDown = true;
     console.log(`${signal} recebido. Desligando o bot com seguranca.`);
     if (loginTimeout) clearTimeout(loginTimeout);
+    stopCxcDeletionSweep();
     webServer.close();
     client.destroy();
     await Promise.race([
@@ -4265,6 +4332,7 @@ if (require.main === module) {
 
 module.exports = {
   CXC_CHANNEL_DELETE_DELAY_MS,
+  CXC_DELETION_SWEEP_INTERVAL_MS,
   cxcChallengeComponents,
   cxcChannelTopic,
   cxcControlComponents,

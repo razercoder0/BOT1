@@ -5,6 +5,7 @@ const { PermissionFlagsBits } = require("discord.js");
 const { commands } = require("../src/deploy-commands");
 const {
   CXC_CHANNEL_DELETE_DELAY_MS,
+  CXC_DELETION_SWEEP_INTERVAL_MS,
   cxcChallengeComponents,
   cxcChannelTopic,
   cxcControlComponents,
@@ -179,4 +180,5 @@ test("metadados de recuperacao cabem no topico do canal", () => {
   const metadata = JSON.parse(Buffer.from(topic.slice(4), "base64url").toString("utf8"));
   assert.equal(metadata.z, deleteAt);
   assert.equal(CXC_CHANNEL_DELETE_DELAY_MS, 10_000);
+  assert.equal(CXC_DELETION_SWEEP_INTERVAL_MS, 15_000);
 });
