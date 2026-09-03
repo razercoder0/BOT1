@@ -156,13 +156,13 @@ test("convite e resultado possuem as acoes esperadas", () => {
   assert.ok(inviteIds.some((id) => id.startsWith("cxc_accept:")));
   assert.ok(inviteIds.some((id) => id.startsWith("cxc_decline:")));
 
-  const resultIds = collectCustomIds(
-    cxcResultReviewComponents(match, challenger, challenged).toJSON()
-  );
+  const resultPanel = cxcResultReviewComponents(match, challenger, challenged).toJSON();
+  const resultIds = collectCustomIds(resultPanel);
   assert.deepEqual(resultIds.sort(), [
     `cxc_confirm:${match.id}`,
     `cxc_contest:${match.id}`
   ].sort());
+  assert.match(JSON.stringify(resultPanel), /staff pode confirmar ou contestar/);
 });
 
 test("metadados de recuperacao cabem no topico do canal", () => {

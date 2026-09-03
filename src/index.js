@@ -625,7 +625,7 @@ function cxcResultReviewComponents(match, winner, loser) {
     )
     .addTextDisplayComponents(
       new TextDisplayBuilder().setContent(
-        "-# Apenas o outro lider pode confirmar ou contestar. Os pontos ainda nao foram aplicados."
+        "-# O outro lider ou a staff pode confirmar ou contestar. Os pontos ainda nao foram aplicados."
       )
     );
 }
@@ -4043,7 +4043,7 @@ async function handleCxcProofCommand(interaction) {
     match.resultMessageId = review.id;
     saveState();
     await refreshCxcControl(interaction.guild, match);
-    return interaction.editReply("Prova registrada. Agora o outro lider precisa confirmar ou contestar o resultado.");
+    return interaction.editReply("Prova registrada. Agora o outro lider ou a staff precisa confirmar ou contestar o resultado.");
   } finally {
     cxcActionLocks.delete(match.id);
   }
@@ -4064,13 +4064,14 @@ async function handleCxcResultButton(interaction) {
       flags: MessageFlags.Ephemeral
     });
   }
-  if (!isCxcLeader(interaction.guild.id, match, interaction.user.id)) {
+  const staff = isPanelAdmin(interaction);
+  if (!staff && !isCxcLeader(interaction.guild.id, match, interaction.user.id)) {
     return interaction.reply({
-      content: "Somente os lideres deste confronto podem responder.",
+      content: "Somente os lideres deste confronto ou a staff podem responder.",
       flags: MessageFlags.Ephemeral
     });
   }
-  if (interaction.user.id === match.reportedBy) {
+  if (!staff && interaction.user.id === match.reportedBy) {
     return interaction.reply({
       content: "Quem informou o resultado nao pode confirmar a propria escolha. O outro lider precisa responder.",
       flags: MessageFlags.Ephemeral
