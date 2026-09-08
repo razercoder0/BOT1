@@ -1,6 +1,6 @@
 const { randomUUID } = require('node:crypto');
 const { ChannelType, PermissionFlagsBits: P, MessageFlags: F, ContainerBuilder, TextDisplayBuilder,
-  ActionRowBuilder, ButtonBuilder, ButtonStyle: B, StringSelectMenuBuilder, SeparatorBuilder } = require('discord.js');
+  ActionRowBuilder, ButtonBuilder, ButtonStyle: B, StringSelectMenuBuilder, SectionBuilder, ThumbnailBuilder, escapeMarkdown } = require('discord.js');
 const { getGuildState, saveState } = require('./store');
 const modes = { gapple: 'Gapple', nodebuff: 'NoDebuff' };
 function state(id) { return getGuildState(id).queues ||= { panels: {}, waiting: {}, matches: {} }; }
@@ -11,26 +11,25 @@ function card(title, text, row) {
   return { flags: F.IsComponentsV2, allowedMentions: { parse: [] }, components: [c] };
 }
 function btn(id, label, style) { return new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style); }
-function panel(q, n) {
-  const c = new ContainerBuilder().setAccentColor(0xe5b84b)
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      '-# CXC COMMUNITY  •  DUELS\n## ' + n + ' × ' + n + '  |  ' + (n === 1 ? 'Duelo individual' : 'Duelo de equipes') +
-      '\n' + (n === 1 ? 'Dois jogadores. Um confronto.' : 'Duas equipes de ' + n + ' jogadores.')))
-    .addSeparatorComponents(new SeparatorBuilder().setDivider(true));
-  for (const [mode, label] of Object.entries(modes)) {
-    const waiting = q.waiting[mode + ':' + n];
-    c.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      '### ' + (mode === 'gapple' ? '🍎 ' : '🧪 ') + label + '\n' +
-      (waiting ? '<@' + waiting + '>\n-# 1/2 responsáveis • Aguardando adversário' : 'Nenhum jogador aguardando\n-# 0/2 responsáveis • Fila disponível')));
-  }
-  c.addSeparatorComponents(new SeparatorBuilder().setDivider(true))
-    .addActionRowComponents(new ActionRowBuilder().addComponents(
-      btn('queue:join:gapple:' + n, 'Gapple', B.Success).setEmoji('🍎'),
-      btn('queue:join:nodebuff:' + n, 'NoDebuff', B.Primary).setEmoji('🧪'),
-      btn('queue:leave:' + n, 'Sair', B.Secondary)))
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-      '-# ' + (n === 1 ? 'Vitória registrada pela staff.' : 'Cada responsável leva sua equipe no Minecraft.')));
-  return { flags: F.IsComponentsV2, allowedMentions: { parse: [] }, components: [c] };
+function panel(q, n, guild) {
+  const title = escapeMarkdown(guild?.name || 'CXC Community');
+  const players = Object.entries(modes).map(([mode, label]) => {
+    const id = q.waiting[mode + ':' + n];
+    return label + ': ' + (id ? '<@' + id + '> — aguardando adversário' : 'Nenhum jogador na fila.');
+  }).join('\n');
+  const text = new TextDisplayBuilder().setContent('**' + title + '**\n\n' +
+    '**FORMATO**\n' + n + 'x' + n + (n === 1 ? ' individual' : ' em equipes') + '\n\n' +
+    '**MODO**\nGapple / NoDebuff\n\n**JOGADORES**\n' + players);
+  const c = new ContainerBuilder().setAccentColor(0xf1c40f);
+  const icon = guild?.iconURL?.({ extension: 'png', size: 128 });
+  if (icon) c.addSectionComponents(new SectionBuilder().addTextDisplayComponents(text)
+    .setThumbnailAccessory(new ThumbnailBuilder().setURL(icon).setDescription('Ícone do servidor')));
+  else c.addTextDisplayComponents(text);
+  const actions = new ActionRowBuilder().addComponents(
+    btn('queue:join:gapple:' + n, 'Gapple', B.Secondary),
+    btn('queue:join:nodebuff:' + n, 'NoDebuff', B.Secondary),
+    btn('queue:leave:' + n, 'Sair da fila', B.Danger));
+  return { flags: F.IsComponentsV2, allowedMentions: { parse: [] }, components: [c, actions] };
 }
 function matchCard(m) {
   const active = m.status === 'ACTIVE';
@@ -73,8 +72,8 @@ function installQueues(client, isStaff, adminRoles) {
     await saveState();
     for (let n = 5; n >= 1; n--) {
       const msg = messages[5 - n];
-      if (msg) await msg.edit(panel(q, n));
-      else { q.panels[n] = (await c.send(panel(q, n))).id; await saveState(); }
+      if (msg) await msg.edit(panel(q, n, g));
+      else { q.panels[n] = (await c.send(panel(q, n, g))).id; await saveState(); }
     }
   }
   client.once('clientReady', async () => {
