@@ -50,6 +50,13 @@ async function fetchChannel(g, id) {
   try { return await g.channels.fetch(id); }
   catch (e) { if (e.code === 10003) return null; throw e; }
 }
+async function requirePanelAccess(guild, channel) {
+  if (!channel.permissionsFor) return;
+  const member = guild.members.me || await guild.members.fetchMe?.();
+  const perms = member ? channel.permissionsFor(member) : null;
+  if (perms && !perms.has([P.ViewChannel, P.SendMessages, P.ReadMessageHistory]))
+    throw new Error('O bot precisa das permissoes Ver canal, Enviar mensagens e Ler historico de mensagens neste canal.');
+}
 function installQueues(client, isStaff, adminRoles) {
   const locks = new Set();
   async function refreshRanking(g, force = false) {
@@ -71,6 +78,7 @@ function installQueues(client, isStaff, adminRoles) {
   }
   async function refresh(g) {
     const q = state(g.id);
+    q.panels ||= {};
     for (const key of Object.keys(q.waiting)) if (!key.endsWith(':1')) delete q.waiting[key];
     await saveState();
     if (!q.channelId) return;
@@ -88,7 +96,10 @@ function installQueues(client, isStaff, adminRoles) {
     let msg;
     if (q.panels[1]) {
       try { msg = await c.messages.fetch(q.panels[1]); }
-      catch (e) { if (e.code !== 10008) throw e; }
+      catch (e) {
+        if (e.code !== 10008) throw e;
+        delete q.panels[1]; await saveState();
+      }
     }
     if (msg) await msg.edit(panel(q, 1, g));
     else { q.panels[1] = (await c.send(panel(q, 1, g))).id; await saveState(); }
@@ -139,6 +150,7 @@ function installQueues(client, isStaff, adminRoles) {
         if (i.commandName === 'rankfila' && i.options.getBoolean('painel')) {
           if (!isStaff(i)) throw new Error('Somente a staff pode publicar o ranking individual.');
           if (i.channel.type !== ChannelType.GuildText) throw new Error('Use um canal de texto.');
+          await requirePanelAccess(i.guild, i.channel);
           if (q.individualPanel?.channelId && q.individualPanel.channelId !== i.channelId &&
               await fetchChannel(i.guild, q.individualPanel.channelId))
             throw new Error('O painel individual esta em <#' + q.individualPanel.channelId + '>.');
@@ -215,6 +227,7 @@ function installQueues(client, isStaff, adminRoles) {
       if (i.commandName === 'filas') {
         if (!isStaff(i)) throw new Error('Somente a staff publica filas.');
         if (i.channel.type !== ChannelType.GuildText) throw new Error('Use um canal de texto.');
+        await requirePanelAccess(i.guild, i.channel);
         if (q.channelId && q.channelId !== i.channelId) {
           if (await fetchChannel(i.guild, q.channelId)) throw new Error('Execute /filas em <#' + q.channelId + '>.');
           q.panels = {};
