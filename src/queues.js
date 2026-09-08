@@ -53,28 +53,27 @@ function installQueues(client, isStaff, adminRoles) {
   const locks = new Set();
   async function refresh(g) {
     const q = state(g.id);
+    for (const key of Object.keys(q.waiting)) if (!key.endsWith(':1')) delete q.waiting[key];
+    await saveState();
     if (!q.channelId) return;
     const c = await fetchChannel(g, q.channelId);
     if (!c) return;
-    const messages = [];
-    for (const id of new Set(Object.values(q.panels))) {
-        try { const msg = await c.messages.fetch(id); if (msg) messages.push(msg); }
+    // Keep the 1x1 message and active matches; delete only saved obsolete panels.
+    for (const [format, id] of Object.entries(q.panels)) {
+      if (format === '1') continue;
+      if (id !== q.panels[1]) {
+        try { const msg = await c.messages.fetch(id); if (msg) await msg.delete(); }
         catch (e) { if (e.code !== 10008) throw e; }
+      }
+      delete q.panels[format]; await saveState();
     }
-    messages.sort((a, b) => a.id.length - b.id.length || a.id.localeCompare(b.id, 'en', { numeric: true }));
-    // Reuse chronological message slots so existing panels change order without reposting.
-    q.panels = {};
-    for (let index = 0; index < 5; index++) {
-      const n = 5 - index;
-      const msg = messages[index];
-      if (msg) q.panels[n] = msg.id;
+    let msg;
+    if (q.panels[1]) {
+      try { msg = await c.messages.fetch(q.panels[1]); }
+      catch (e) { if (e.code !== 10008) throw e; }
     }
-    await saveState();
-    for (let n = 5; n >= 1; n--) {
-      const msg = messages[5 - n];
-      if (msg) await msg.edit(panel(q, n, g));
-      else { q.panels[n] = (await c.send(panel(q, n, g))).id; await saveState(); }
-    }
+    if (msg) await msg.edit(panel(q, 1, g));
+    else { q.panels[1] = (await c.send(panel(q, 1, g))).id; await saveState(); }
   }
   client.once('clientReady', async () => {
     for (const g of client.guilds.cache.values()) {
@@ -187,12 +186,12 @@ function installQueues(client, isStaff, adminRoles) {
           q.panels = {};
         }
         q.channelId = i.channelId; q.categoryId = i.channel.parentId;
-        await saveState(); await refresh(i.guild); await i.editReply('Cinco paineis publicados ou atualizados.'); return true;
+        await saveState(); await refresh(i.guild); await i.editReply('Painel 1x1 publicado ou atualizado.'); return true;
       }
       const [, action, arg, value] = i.customId.split(':');
       if (['join', 'leave'].includes(action)) {
         const n = Number(action === 'join' ? value : arg);
-        if (![1,2,3,4,5].includes(n) || q.channelId !== i.channelId || q.panels[n] !== i.message.id)
+        if (n !== 1 || q.channelId !== i.channelId || q.panels[n] !== i.message.id)
           throw new Error('Este painel nao esta ativo.');
         if (action === 'leave') {
           for (const k of Object.keys(q.waiting))
