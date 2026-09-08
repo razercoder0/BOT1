@@ -9,7 +9,8 @@ function setup() {
   let sweep;
   const source = fs.readFileSync(path.join(__dirname, '../src/queues.js'), 'utf8');
   const box = { module: { exports: {} }, console, Date, Buffer, setInterval: fn => { sweep = fn; return { unref() {} }; }, clearInterval() {},
-    require: name => name === './store' ? { getGuildState: () => state, saveState: async () => {} } : require(name) };
+    require: name => name === './store' ? { getGuildState: () => state, saveState: async () => {} } :
+      name === './queue-ranking' ? require('../src/queue-ranking') : require(name) };
   vm.runInNewContext(source, box);
   const channels = new Map();
   let created = 0;
@@ -97,6 +98,31 @@ test('migracao remove formatos antigos sem cancelar partidas', async () => {
   assert.match(invalid.replies[0], /nao esta ativo/);
   await s.api.handle(publish);
   assert.equal(deleted, 4);
+});
+
+test('painel individual exige staff, atualiza sem duplicar e preserva ranking de clans', async () => {
+  const s = setup();
+  s.state.ranking = { CLAN: { points: 42 } };
+  const request = staff => {
+    const i = s.interaction('admin', null, undefined, staff);
+    i.commandName = 'rankfila'; i.options = { getBoolean: () => true }; return i;
+  };
+  await s.api.handle(request(false));
+  assert.equal(s.state.queues.individualPanel, undefined);
+  await s.api.handle(request(true));
+  const q = s.state.queues;
+  const id = q.individualPanel.messageId;
+  const msg = await s.channels.get('lobby').messages.fetch(id);
+  let edits = 0;
+  msg.edit = async p => { p.components.forEach(c => c.toJSON()); edits++; };
+  q.matches.done = { status: 'FINISHED', size: 1, players: ['a', 'b'], winner: 'a' };
+  await s.sweep();
+  assert.equal(edits, 1);
+  await s.sweep();
+  assert.equal(edits, 1);
+  await s.api.handle(request(true));
+  assert.equal(q.individualPanel.messageId, id);
+  assert.deepEqual(s.state.ranking, { CLAN: { points: 42 } });
 });
 
 test('criacao interrompida e retomada sem perder os participantes', async () => {

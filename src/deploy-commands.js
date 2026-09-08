@@ -3,6 +3,8 @@ require("dotenv").config();
 const { REST, Routes, SlashCommandBuilder } = require("discord.js");
 
 const commands = [
+  new SlashCommandBuilder().setName('rankfila').setDescription('Consulta o ranking individual das filas').setDMPermission(false)
+    .addBooleanOption(o => o.setName('painel').setDescription('Publicar painel fixo neste canal (somente staff)')).toJSON(),
   new SlashCommandBuilder().setName('fila').setDescription('Emergencias das filas (staff)').setDMPermission(false)
     .addSubcommand(s => s.setName('pausar').setDescription('Bloqueia novas entradas'))
     .addSubcommand(s => s.setName('retomar').setDescription('Libera novas entradas'))

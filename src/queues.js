@@ -2,6 +2,7 @@ const { randomUUID } = require('node:crypto');
 const { ChannelType, PermissionFlagsBits: P, MessageFlags: F, ContainerBuilder, TextDisplayBuilder,
   ActionRowBuilder, ButtonBuilder, ButtonStyle: B, StringSelectMenuBuilder, SectionBuilder, ThumbnailBuilder, escapeMarkdown } = require('discord.js');
 const { getGuildState, saveState } = require('./store');
+const { standings, rankingPanel } = require('./queue-ranking');
 const modes = { gapple: 'Gapple', nodebuff: 'NoDebuff' };
 function state(id) { return getGuildState(id).queues ||= { panels: {}, waiting: {}, matches: {} }; }
 function card(title, text, row) {
@@ -51,6 +52,23 @@ async function fetchChannel(g, id) {
 }
 function installQueues(client, isStaff, adminRoles) {
   const locks = new Set();
+  async function refreshRanking(g, force = false) {
+    const q = state(g.id);
+    if (!q.individualPanel?.channelId) return;
+    const signature = JSON.stringify(standings(q));
+    if (!force && q.individualPanel.signature === signature) return;
+    const c = await fetchChannel(g, q.individualPanel.channelId);
+    if (!c) return;
+    let msg;
+    if (q.individualPanel.messageId) {
+      try { msg = await c.messages.fetch(q.individualPanel.messageId); }
+      catch (e) { if (e.code !== 10008) throw e; }
+    }
+    if (msg) await msg.edit(rankingPanel(q, g, 0, true));
+    else q.individualPanel.messageId = (await c.send(rankingPanel(q, g, 0, true))).id;
+    q.individualPanel.signature = signature;
+    await saveState();
+  }
   async function refresh(g) {
     const q = state(g.id);
     for (const key of Object.keys(q.waiting)) if (!key.endsWith(':1')) delete q.waiting[key];
@@ -79,7 +97,7 @@ function installQueues(client, isStaff, adminRoles) {
     for (const g of client.guilds.cache.values()) {
       if (locks.has(g.id)) continue;
       locks.add(g.id);
-      try { await refresh(g); }
+      try { await refresh(g); await refreshRanking(g, true); }
       catch (e) { console.error('Atualizacao dos paineis de filas:', e); }
       finally { locks.delete(g.id); }
     }
@@ -110,13 +128,29 @@ function installQueues(client, isStaff, adminRoles) {
     m.status = 'ACTIVE'; await saveState();
   }
   async function handle(i) {
-    if (!['filas', 'fila'].includes(i.commandName) && !i.customId?.startsWith('queue:')) return false;
+    if (!['filas', 'fila', 'rankfila'].includes(i.commandName) && !i.customId?.startsWith('queue:')) return false;
     if (!i.guild) { await i.reply({ content: 'Use no servidor.', flags: F.Ephemeral }); return true; }
     await i.deferReply({ flags: F.Ephemeral });
     if (locks.has(i.guild.id)) { await i.editReply('Uma acao esta em andamento. Tente novamente em instantes.'); return true; }
     locks.add(i.guild.id);
     try {
       const q = state(i.guild.id);
+      if (i.commandName === 'rankfila' || i.customId?.startsWith('queue:rank:')) {
+        if (i.commandName === 'rankfila' && i.options.getBoolean('painel')) {
+          if (!isStaff(i)) throw new Error('Somente a staff pode publicar o ranking individual.');
+          if (i.channel.type !== ChannelType.GuildText) throw new Error('Use um canal de texto.');
+          if (q.individualPanel?.channelId && q.individualPanel.channelId !== i.channelId &&
+              await fetchChannel(i.guild, q.individualPanel.channelId))
+            throw new Error('O painel individual esta em <#' + q.individualPanel.channelId + '>.');
+          if (q.individualPanel?.channelId !== i.channelId) q.individualPanel = { channelId: i.channelId };
+          await saveState(); await refreshRanking(i.guild, true);
+          await i.editReply('Ranking individual publicado ou atualizado neste canal.');
+        } else {
+          const page = i.customId ? Number(i.customId.split(':')[2]) : 0;
+          await i.editReply(rankingPanel(q, i.guild, page));
+        }
+        return true;
+      }
       if (i.commandName === 'fila' || i.customId?.startsWith('queue:emergency:')) {
         if (!isStaff(i)) throw new Error('Somente a staff pode usar comandos de emergencia.');
         const parts = i.customId?.split(':');
@@ -240,6 +274,7 @@ function installQueues(client, isStaff, adminRoles) {
       await saveState();
       await i.editReply(card('Partida finalizada', 'Resultado registrado. Canal com exclusao agendada.'));
       await i.channel.messages.edit(m.messageId, matchCard(m));
+      await refreshRanking(i.guild);
       return true;
     } catch (e) {
       console.error('Erro nas filas:', e);
@@ -254,6 +289,8 @@ function installQueues(client, isStaff, adminRoles) {
       locks.add(g.id);
       try {
         const q = state(g.id);
+        try { await refreshRanking(g); }
+        catch (e) { console.error('Atualizacao do ranking individual:', e); }
         for (const m of Object.values(q.matches)) {
           try {
             if (m.status === 'CREATING') { await create(g, m); await refresh(g); }
