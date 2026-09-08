@@ -50,6 +50,16 @@ async function fetchChannel(g, id) {
   try { return await g.channels.fetch(id); }
   catch (e) { if (e.code === 10003) return null; throw e; }
 }
+async function fetchStoredPanelChannel(g, id) {
+  try { return await fetchChannel(g, id); }
+  catch (e) { if ([50001, 50013].includes(e.code)) return null; throw e; }
+}
+function isMissingMessage(e) { return e?.code === 10008 || e?.rawError?.code === 10008; }
+async function deleteSavedMessage(channel, messageId) {
+  if (!channel || !messageId) return;
+  try { const msg = await channel.messages.fetch(messageId); if (msg) await msg.delete(); }
+  catch (e) { if (!isMissingMessage(e) && ![10003, 50001, 50013].includes(e.code)) throw e; }
+}
 async function requirePanelAccess(guild, channel) {
   if (!channel.permissionsFor) return;
   const member = guild.members.me || await guild.members.fetchMe?.();
@@ -69,10 +79,20 @@ function installQueues(client, isStaff, adminRoles) {
     let msg;
     if (q.individualPanel.messageId) {
       try { msg = await c.messages.fetch(q.individualPanel.messageId); }
-      catch (e) { if (e.code !== 10008) throw e; }
+      catch (e) {
+        if (!isMissingMessage(e)) throw e;
+        delete q.individualPanel.messageId;
+      }
     }
-    if (msg) await msg.edit(rankingPanel(q, g, 0, true));
+    if (msg) {
+      try { await msg.edit(rankingPanel(q, g, 0, true)); }
+      catch (e) {
+        if (!isMissingMessage(e)) throw e;
+        msg = null; delete q.individualPanel.messageId;
+      }
+    }
     else q.individualPanel.messageId = (await c.send(rankingPanel(q, g, 0, true))).id;
+    if (!msg && !q.individualPanel.messageId) q.individualPanel.messageId = (await c.send(rankingPanel(q, g, 0, true))).id;
     q.individualPanel.signature = signature;
     await saveState();
   }
@@ -97,12 +117,19 @@ function installQueues(client, isStaff, adminRoles) {
     if (q.panels[1]) {
       try { msg = await c.messages.fetch(q.panels[1]); }
       catch (e) {
-        if (e.code !== 10008) throw e;
+        if (!isMissingMessage(e)) throw e;
         delete q.panels[1]; await saveState();
       }
     }
-    if (msg) await msg.edit(panel(q, 1, g));
+    if (msg) {
+      try { await msg.edit(panel(q, 1, g)); }
+      catch (e) {
+        if (!isMissingMessage(e)) throw e;
+        delete q.panels[1]; msg = null; await saveState();
+      }
+    }
     else { q.panels[1] = (await c.send(panel(q, 1, g))).id; await saveState(); }
+    if (!msg && !q.panels[1]) { q.panels[1] = (await c.send(panel(q, 1, g))).id; await saveState(); }
   }
   client.once('clientReady', async () => {
     for (const g of client.guilds.cache.values()) {
@@ -151,10 +178,11 @@ function installQueues(client, isStaff, adminRoles) {
           if (!isStaff(i)) throw new Error('Somente a staff pode publicar o ranking individual.');
           if (i.channel.type !== ChannelType.GuildText) throw new Error('Use um canal de texto.');
           await requirePanelAccess(i.guild, i.channel);
-          if (q.individualPanel?.channelId && q.individualPanel.channelId !== i.channelId &&
-              await fetchChannel(i.guild, q.individualPanel.channelId))
-            throw new Error('O painel individual esta em <#' + q.individualPanel.channelId + '>.');
-          if (q.individualPanel?.channelId !== i.channelId) q.individualPanel = { channelId: i.channelId };
+          if (q.individualPanel?.channelId !== i.channelId) {
+            const oldChannel = q.individualPanel?.channelId ? await fetchStoredPanelChannel(i.guild, q.individualPanel.channelId) : null;
+            await deleteSavedMessage(oldChannel, q.individualPanel?.messageId);
+            q.individualPanel = { channelId: i.channelId };
+          }
           await saveState(); await refreshRanking(i.guild, true);
           await i.editReply('Ranking individual publicado ou atualizado neste canal.');
         } else {
@@ -229,7 +257,8 @@ function installQueues(client, isStaff, adminRoles) {
         if (i.channel.type !== ChannelType.GuildText) throw new Error('Use um canal de texto.');
         await requirePanelAccess(i.guild, i.channel);
         if (q.channelId && q.channelId !== i.channelId) {
-          if (await fetchChannel(i.guild, q.channelId)) throw new Error('Execute /filas em <#' + q.channelId + '>.');
+          const oldChannel = await fetchStoredPanelChannel(i.guild, q.channelId);
+          await deleteSavedMessage(oldChannel, q.panels?.[1]);
           q.panels = {};
         }
         q.channelId = i.channelId; q.categoryId = i.channel.parentId;

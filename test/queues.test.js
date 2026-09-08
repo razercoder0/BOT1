@@ -18,7 +18,7 @@ function setup() {
     const messages = new Map();
     const c = { id, type: discord.ChannelType.GuildText, parentId: 'category', topic: '',
       send: async payload => { payload.components[0].toJSON(); const m = { id: id + '-' + messages.size, author: { id: 'bot' }, components: payload.components,
-        edit: async p => { p.components[0].toJSON(); } }; messages.set(m.id, m); return m; },
+        edit: async p => { p.components[0].toJSON(); }, delete: async () => { messages.delete(m.id); } }; messages.set(m.id, m); return m; },
       messages: { fetch: async key => typeof key === 'object' ? new discord.Collection(messages) : messages.get(key),
         edit: async (key, p) => { p.components[0].toJSON(); } },
       delete: async () => { channels.delete(id); } };
@@ -98,6 +98,31 @@ test('migracao remove formatos antigos sem cancelar partidas', async () => {
   assert.match(invalid.replies[0], /nao esta ativo/);
   await s.api.handle(publish);
   assert.equal(deleted, 4);
+});
+
+test('filas pode mover painel para outro canal e recriar se painel foi apagado', async () => {
+  const s = setup();
+  const publish = s.interaction('admin', null, undefined, true); publish.commandName = 'filas';
+  await s.api.handle(publish);
+  const firstId = s.state.queues.panels[1];
+  const firstMsg = await s.channels.get('lobby').messages.fetch(firstId);
+  firstMsg.edit = async () => { const e = new Error('Unknown Message'); e.code = 10008; throw e; };
+  await s.api.handle(publish);
+  assert.notEqual(s.state.queues.panels[1], firstId);
+  const other = s.channels.get('other') || (() => {
+    const messages = new Map();
+    const c = { id: 'other', type: discord.ChannelType.GuildText, parentId: 'other-category', topic: '',
+      send: async payload => { payload.components[0].toJSON(); const m = { id: 'other-' + messages.size, author: { id: 'bot' }, components: payload.components,
+        edit: async p => { p.components[0].toJSON(); }, delete: async () => { messages.delete(m.id); } }; messages.set(m.id, m); return m; },
+      messages: { fetch: async key => typeof key === 'object' ? new discord.Collection(messages) : messages.get(key),
+        edit: async (key, p) => { p.components[0].toJSON(); } },
+      delete: async () => { s.channels.delete('other'); } };
+    s.channels.set('other', c); return c;
+  })();
+  const move = s.interaction('admin', null, other, true); move.commandName = 'filas';
+  await s.api.handle(move);
+  assert.equal(s.state.queues.channelId, 'other');
+  assert.match(move.replies[0], /Painel 1x1/);
 });
 
 test('painel individual exige staff, atualiza sem duplicar e preserva ranking de clans', async () => {
