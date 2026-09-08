@@ -8,7 +8,7 @@ function setup() {
   const state = {};
   let sweep;
   const source = fs.readFileSync(path.join(__dirname, '../src/queues.js'), 'utf8');
-  const box = { module: { exports: {} }, console, Date, setInterval: fn => { sweep = fn; return { unref() {} }; }, clearInterval() {},
+  const box = { module: { exports: {} }, console, Date, Buffer, setInterval: fn => { sweep = fn; return { unref() {} }; }, clearInterval() {},
     require: name => name === './store' ? { getGuildState: () => state, saveState: async () => {} } : require(name) };
   vm.runInNewContext(source, box);
   const channels = new Map();
@@ -90,4 +90,40 @@ test('criacao interrompida e retomada sem perder os participantes', async () => 
   assert.equal(m.status, 'ACTIVE');
   assert.equal(s.created, 1);
   assert.equal(m.players.join(','), 'a,b');
+});
+test('emergencias exigem staff, confirmacao e preservam partidas ao limpar', async () => {
+  const s = setup();
+  async function command(action, staff = true, id = null) {
+    const i = s.interaction('admin', null, undefined, staff);
+    i.commandName = 'fila';
+    i.options = { getSubcommand: () => action, getString: () => id, getUser: () => ({ id: 'a' }) };
+    await s.api.handle(i); return i;
+  }
+  const publish = s.interaction('admin', null, undefined, true); publish.commandName = 'filas';
+  await s.api.handle(publish);
+  await command('pausar', false); assert.ok(!s.state.queues.paused);
+  await command('pausar'); assert.equal(s.state.queues.paused, true);
+  await s.api.handle(s.interaction('a', 'queue:join:gapple:2'));
+  assert.equal(Object.keys(s.state.queues.waiting).length, 0);
+  await command('retomar');
+  await s.api.handle(s.interaction('a', 'queue:join:gapple:2'));
+  await command('remover'); assert.equal(Object.keys(s.state.queues.waiting).length, 0);
+  await s.api.handle(s.interaction('a', 'queue:join:gapple:2'));
+  await s.api.handle(s.interaction('b', 'queue:join:gapple:2'));
+  const m = Object.values(s.state.queues.matches)[0];
+  s.state.queues.waiting['gapple:1'] = 'c';
+  const clear = await command('limpar');
+  const clearId = clear.replies[0].components[0].toJSON().components[1].components[0].custom_id;
+  await s.api.handle(s.interaction('other', clearId, undefined, true));
+  assert.equal(s.state.queues.waiting['gapple:1'], 'c');
+  await s.api.handle(s.interaction('admin', clearId, undefined, true));
+  assert.equal(Object.keys(s.state.queues.waiting).length, 0); assert.equal(m.status, 'ACTIVE');
+  const list = await command('listar'); assert.ok(list.replies[0].files[0].attachment.toString().includes(m.id));
+  const end = await command('encerrar', true, m.id);
+  assert.equal(m.status, 'ACTIVE');
+  const endId = end.replies[0].components[0].toJSON().components[1].components[0].custom_id;
+  await s.api.handle(s.interaction('admin', endId, undefined, true));
+  assert.equal(m.status, 'CANCELLED'); assert.equal(m.winner, null);
+  await command('reparar'); await s.sweep();
+  assert.equal(s.channels.has(m.channelId), false);
 });

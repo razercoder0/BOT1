@@ -3,6 +3,16 @@ require("dotenv").config();
 const { REST, Routes, SlashCommandBuilder } = require("discord.js");
 
 const commands = [
+  new SlashCommandBuilder().setName('fila').setDescription('Emergencias das filas (staff)').setDMPermission(false)
+    .addSubcommand(s => s.setName('pausar').setDescription('Bloqueia novas entradas'))
+    .addSubcommand(s => s.setName('retomar').setDescription('Libera novas entradas'))
+    .addSubcommand(s => s.setName('listar').setDescription('Lista partidas e seus IDs'))
+    .addSubcommand(s => s.setName('encerrar').setDescription('Encerra sem vencedor, com confirmacao')
+      .addStringOption(o => o.setName('id').setDescription('ID da partida; opcional no chat dela')))
+    .addSubcommand(s => s.setName('remover').setDescription('Remove um jogador da espera')
+      .addUserOption(o => o.setName('jogador').setDescription('Jogador na espera').setRequired(true)))
+    .addSubcommand(s => s.setName('limpar').setDescription('Limpa somente a espera, com confirmacao'))
+    .addSubcommand(s => s.setName('reparar').setDescription('Verifica canais e restaura paineis')).toJSON(),
   new SlashCommandBuilder().setName("filas").setDescription("Publica as filas de duelos neste canal (staff)").setDMPermission(false).toJSON(),
   new SlashCommandBuilder()
     .setName("painel")

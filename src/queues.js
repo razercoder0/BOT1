@@ -26,8 +26,8 @@ function panel(q, n, guild) {
     .setThumbnailAccessory(new ThumbnailBuilder().setURL(icon).setDescription('Ícone do servidor')));
   else c.addTextDisplayComponents(text);
   const actions = new ActionRowBuilder().addComponents(
-    btn('queue:join:gapple:' + n, 'Gapple', B.Secondary),
-    btn('queue:join:nodebuff:' + n, 'NoDebuff', B.Secondary),
+    btn('queue:join:gapple:' + n, 'Gapple', B.Secondary).setDisabled(Boolean(q.paused)),
+    btn('queue:join:nodebuff:' + n, 'NoDebuff', B.Secondary).setDisabled(Boolean(q.paused)),
     btn('queue:leave:' + n, 'Sair da fila', B.Danger));
   return { flags: F.IsComponentsV2, allowedMentions: { parse: [] }, components: [c, actions] };
 }
@@ -111,13 +111,74 @@ function installQueues(client, isStaff, adminRoles) {
     m.status = 'ACTIVE'; await saveState();
   }
   async function handle(i) {
-    if (i.commandName !== 'filas' && !i.customId?.startsWith('queue:')) return false;
+    if (!['filas', 'fila'].includes(i.commandName) && !i.customId?.startsWith('queue:')) return false;
     if (!i.guild) { await i.reply({ content: 'Use no servidor.', flags: F.Ephemeral }); return true; }
     await i.deferReply({ flags: F.Ephemeral });
     if (locks.has(i.guild.id)) { await i.editReply('Uma acao esta em andamento. Tente novamente em instantes.'); return true; }
     locks.add(i.guild.id);
     try {
       const q = state(i.guild.id);
+      if (i.commandName === 'fila' || i.customId?.startsWith('queue:emergency:')) {
+        if (!isStaff(i)) throw new Error('Somente a staff pode usar comandos de emergencia.');
+        const parts = i.customId?.split(':');
+        const action = parts ? parts[2] : i.options.getSubcommand();
+        const confirmed = Boolean(parts);
+        if (confirmed && (parts[3] !== i.user.id || Date.now() - Number(parts[4]) > 60000 || !Number.isFinite(Number(parts[4]))))
+          throw new Error('Confirmacao expirada ou pertence a outro administrador.');
+        if (action === 'pausar' || action === 'retomar') {
+          q.paused = action === 'pausar'; await saveState(); await refresh(i.guild);
+          await i.editReply(q.paused ? 'Novas entradas pausadas.' : 'Novas entradas liberadas.'); return true;
+        }
+        if (action === 'listar') {
+          const matches = Object.values(q.matches).filter(m => !m.deletedAt);
+          const lines = matches.map(m => m.id + ' | ' + m.status + ' | ' + modes[m.mode] + ' ' + m.size + 'x' + m.size +
+            ' | ' + m.players.map(id => '<@' + id + '>').join(' x ') + (m.channelId ? ' | <#' + m.channelId + '>' : ''));
+          await i.editReply({ content: lines.length ? 'Lista completa no arquivo anexado.' : 'Nenhuma partida pendente.',
+            files: lines.length ? [{ attachment: Buffer.from(lines.join('\n')), name: 'partidas.txt' }] : [] }); return true;
+        }
+        if (action === 'remover') {
+          const user = i.options.getUser('jogador', true);
+          let removed = false;
+          for (const key of Object.keys(q.waiting)) if (q.waiting[key] === user.id) { delete q.waiting[key]; removed = true; }
+          await saveState(); await refresh(i.guild);
+          await i.editReply(removed ? 'Jogador removido da espera.' : 'Jogador nao esta na espera. Para partidas, use /fila encerrar.'); return true;
+        }
+        if (action === 'limpar' || action === 'encerrar') {
+          const id = confirmed ? parts[5] : (action === 'encerrar' ? i.options.getString('id') : null);
+          const m = action === 'encerrar' ? (id ? q.matches[id] : Object.values(q.matches).find(m => m.channelId === i.channelId)) : null;
+          if (action === 'encerrar' && (!m || !['ACTIVE', 'CREATING'].includes(m.status)))
+            throw new Error('Partida nao esta ativa. Use /fila listar para consultar os IDs.');
+          if (!confirmed) {
+            await i.editReply(card('Confirmar ' + action + '?', action === 'limpar' ? 'Remove todos da espera. Partidas continuam. Valido por 60 segundos.' :
+              'Encerra ' + m.id + ' sem vencedor e agenda a exclusao do chat. Valido por 60 segundos.',
+              new ActionRowBuilder().addComponents(btn('queue:emergency:' + action + ':' + i.user.id + ':' + Date.now() + ':' + (m?.id || '-'), 'Confirmar', B.Danger)))); return true;
+          }
+          if (m) {
+            // Recover a channel created before its ID was saved, without creating another one.
+            if (!m.channelId) {
+              const channels = await i.guild.channels.fetch();
+              m.channelId = channels.find(c => c?.topic === 'QUEUE|' + m.id)?.id;
+            }
+            m.status = 'CANCELLED'; m.winner = null; m.staff = i.user.id;
+            m.finishedAt = new Date().toISOString(); m.deleteAt = Date.now() + 10000;
+          } else q.waiting = {};
+          await saveState(); await refresh(i.guild);
+          await i.editReply(card('Concluido', m ? 'Partida cancelada sem alterar pontos. Exclusao agendada.' : 'Espera limpa. Partidas preservadas.')); return true;
+        }
+        if (action === 'reparar') {
+          let repaired = 0;
+          for (const m of Object.values(q.matches)) {
+            if (m.status === 'ACTIVE' && m.channelId && !await fetchChannel(i.guild, m.channelId)) {
+              m.status = 'CANCELLED'; m.staff = i.user.id; m.finishedAt = new Date().toISOString();
+              m.deletedAt = m.finishedAt; repaired++;
+            }
+            if (['FINISHED', 'CANCELLED'].includes(m.status) && !m.deletedAt) m.deleteAt = Date.now();
+          }
+          await saveState(); await refresh(i.guild);
+          await i.editReply('Paineis verificados. ' + repaired + ' partida(s) sem canal liberada(s). Exclusoes pendentes serao tentadas novamente.'); return true;
+        }
+        throw new Error('Acao de emergencia invalida.');
+      }
       if (i.commandName === 'filas') {
         if (!isStaff(i)) throw new Error('Somente a staff publica filas.');
         if (i.channel.type !== ChannelType.GuildText) throw new Error('Use um canal de texto.');
@@ -138,6 +199,7 @@ function installQueues(client, isStaff, adminRoles) {
             if (q.waiting[k] === i.user.id && k.endsWith(':' + n)) delete q.waiting[k];
           await saveState(); await refresh(i.guild); await i.editReply('Voce saiu da fila.'); return true;
         }
+        if (q.paused) throw new Error('As filas estao pausadas pela staff.');
         if (!modes[arg]) throw new Error('Modo invalido.');
         if (busy(q, i.user.id)) throw new Error('Voce ja esta em uma fila ou partida.');
         const slot = arg + ':' + n;
@@ -197,7 +259,7 @@ function installQueues(client, isStaff, adminRoles) {
           try {
             if (m.status === 'CREATING') { await create(g, m); await refresh(g); }
             if (m.deleteAt && Date.now() >= m.deleteAt && !m.deletedAt) {
-              const c = await fetchChannel(g, m.channelId);
+              const c = m.channelId ? await fetchChannel(g, m.channelId) : null;
               if (c) await c.delete('Partida de fila finalizada');
               m.deletedAt = new Date().toISOString(); await saveState();
             }
