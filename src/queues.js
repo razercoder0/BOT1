@@ -35,9 +35,9 @@ function panel(q, n, guild) {
 function matchCard(m) {
   const active = m.status === 'ACTIVE';
   return card(active ? 'Partida encontrada' : 'Partida finalizada',
-    '**' + modes[m.mode] + ' • ' + m.size + 'x' + m.size + '**\nEquipe 1: <@' + m.players[0] +
-    '>\nEquipe 2: <@' + m.players[1] + '>\n\n' +
-    (active ? 'Desafiem um ao outro no servidor de Minecraft. Cada responsavel leva sua equipe.\nEnviem a print do resultado aqui. Somente a staff registra a vitoria.' :
+    '**' + modes[m.mode] + ' • ' + m.size + 'x' + m.size + '**\nJogador 1: <@' + m.players[0] +
+    '>\nJogador 2: <@' + m.players[1] + '>\n\n' +
+    (active ? 'Duelo 1x1 iniciado. Entrem no servidor de Minecraft, joguem no modo combinado e enviem a print do resultado neste canal.\nSomente a staff pode definir o vencedor ou cancelar a partida.' :
       (m.winner ? 'Vencedor: <@' + m.winner + '>\nRegistrado por: <@' + m.staff + '>' : 'Partida cancelada.') + '\nExclusao do canal agendada.'),
     active ? new ActionRowBuilder().addComponents(btn('queue:result:' + m.id, 'Definir vencedor', B.Success),
       btn('queue:cancel:' + m.id, 'Cancelar partida', B.Danger)) : null);
