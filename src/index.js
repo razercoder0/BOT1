@@ -4192,8 +4192,11 @@ client.on("guildMemberAdd", async (member) => {
   }
 });
 
+const queues = require('./queues').installQueues(client, isPanelAdmin, adminRoleIds);
+
 client.on("interactionCreate", async (interaction) => {
   try {
+    if (await queues.handle(interaction)) return;
     if (interaction.isChatInputCommand() && interaction.commandName === "painel") {
       return await handlePanelCommand(interaction);
     }
@@ -4326,6 +4329,7 @@ if (require.main === module) {
     console.log(`${signal} recebido. Desligando o bot com seguranca.`);
     if (loginTimeout) clearTimeout(loginTimeout);
     stopCxcDeletionSweep();
+    queues.stop();
     webServer.close();
     client.destroy();
     await Promise.race([

@@ -3,6 +3,7 @@ require("dotenv").config();
 const { REST, Routes, SlashCommandBuilder } = require("discord.js");
 
 const commands = [
+  new SlashCommandBuilder().setName("filas").setDescription("Publica as filas de duelos neste canal (staff)").setDMPermission(false).toJSON(),
   new SlashCommandBuilder()
     .setName("painel")
     .setDescription("Publica ou atualiza o painel de acesso dos clans")

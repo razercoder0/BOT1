@@ -52,6 +52,14 @@ Bot para Discord que organiza membros por clan.
 
 ## Como ligar
 
+## Filas de duelos
+
+A staff executa `/filas` em um canal de texto para publicar cinco paineis, de 1x1 a 5x5, com Gapple, NoDebuff e Sair. Repetir o comando atualiza as mensagens existentes. Sao sempre dois responsaveis: cada um leva sua equipe no Minecraft. Uma pessoa so participa de uma fila ou partida ativa por vez.
+
+O canal privado da partida usa a categoria do canal de filas. Os participantes e a staff configurada recebem acesso. Somente a staff escolhe o vencedor ou confirma o cancelamento. Os resultados ficam separados dos pontos dos clans. A limpeza roda a cada dez segundos e retoma exclusoes pendentes apos reinicios. Falhas do Discord aparecem nos logs e sao tentadas novamente. Crie os paineis somente depois de registrar o novo comando com `npm run deploy`.
+
+## Instalacao
+
 1. Instale as dependencias:
 
 ```bash
