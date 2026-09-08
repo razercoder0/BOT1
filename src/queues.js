@@ -1,6 +1,6 @@
 const { randomUUID } = require('node:crypto');
 const { ChannelType, PermissionFlagsBits: P, MessageFlags: F, ContainerBuilder, TextDisplayBuilder,
-  ActionRowBuilder, ButtonBuilder, ButtonStyle: B, StringSelectMenuBuilder } = require('discord.js');
+  ActionRowBuilder, ButtonBuilder, ButtonStyle: B, StringSelectMenuBuilder, SeparatorBuilder } = require('discord.js');
 const { getGuildState, saveState } = require('./store');
 const modes = { gapple: 'Gapple', nodebuff: 'NoDebuff' };
 function state(id) { return getGuildState(id).queues ||= { panels: {}, waiting: {}, matches: {} }; }
@@ -12,11 +12,25 @@ function card(title, text, row) {
 }
 function btn(id, label, style) { return new ButtonBuilder().setCustomId(id).setLabel(label).setStyle(style); }
 function panel(q, n) {
-  return card('Fila ' + n + 'x' + n, Object.entries(modes).map(([m, label]) =>
-    '**' + label + ':** ' + (q.waiting[m + ':' + n] ? '<@' + q.waiting[m + ':' + n] + '> aguardando adversario' : 'Fila vazia')).join('\n') +
-    '\nCada responsavel leva uma equipe de ' + n + ' jogador(es).',
-    new ActionRowBuilder().addComponents(btn('queue:join:gapple:' + n, 'Gapple', B.Success),
-      btn('queue:join:nodebuff:' + n, 'NoDebuff', B.Primary), btn('queue:leave:' + n, 'Sair', B.Danger)));
+  const c = new ContainerBuilder().setAccentColor(0xe5b84b)
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      '-# CXC COMMUNITY  •  DUELS\n## ' + n + ' × ' + n + '  |  ' + (n === 1 ? 'Duelo individual' : 'Duelo de equipes') +
+      '\n' + (n === 1 ? 'Dois jogadores. Um confronto.' : 'Duas equipes de ' + n + ' jogadores.')))
+    .addSeparatorComponents(new SeparatorBuilder().setDivider(true));
+  for (const [mode, label] of Object.entries(modes)) {
+    const waiting = q.waiting[mode + ':' + n];
+    c.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      '### ' + (mode === 'gapple' ? '🍎 ' : '🧪 ') + label + '\n' +
+      (waiting ? '<@' + waiting + '>\n-# 1/2 responsáveis • Aguardando adversário' : 'Nenhum jogador aguardando\n-# 0/2 responsáveis • Fila disponível')));
+  }
+  c.addSeparatorComponents(new SeparatorBuilder().setDivider(true))
+    .addActionRowComponents(new ActionRowBuilder().addComponents(
+      btn('queue:join:gapple:' + n, 'Gapple', B.Success).setEmoji('🍎'),
+      btn('queue:join:nodebuff:' + n, 'NoDebuff', B.Primary).setEmoji('🧪'),
+      btn('queue:leave:' + n, 'Sair', B.Secondary)))
+    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+      '-# ' + (n === 1 ? 'Vitória registrada pela staff.' : 'Cada responsável leva sua equipe no Minecraft.')));
+  return { flags: F.IsComponentsV2, allowedMentions: { parse: [] }, components: [c] };
 }
 function matchCard(m) {
   const active = m.status === 'ACTIVE';
@@ -43,16 +57,35 @@ function installQueues(client, isStaff, adminRoles) {
     if (!q.channelId) return;
     const c = await fetchChannel(g, q.channelId);
     if (!c) return;
-    for (let n = 1; n <= 5; n++) {
-      let msg;
-      if (q.panels[n]) {
-        try { msg = await c.messages.fetch(q.panels[n]); }
+    const messages = [];
+    for (const id of new Set(Object.values(q.panels))) {
+        try { const msg = await c.messages.fetch(id); if (msg) messages.push(msg); }
         catch (e) { if (e.code !== 10008) throw e; }
-      }
+    }
+    messages.sort((a, b) => a.id.length - b.id.length || a.id.localeCompare(b.id, 'en', { numeric: true }));
+    // Reuse chronological message slots so existing panels change order without reposting.
+    q.panels = {};
+    for (let index = 0; index < 5; index++) {
+      const n = 5 - index;
+      const msg = messages[index];
+      if (msg) q.panels[n] = msg.id;
+    }
+    await saveState();
+    for (let n = 5; n >= 1; n--) {
+      const msg = messages[5 - n];
       if (msg) await msg.edit(panel(q, n));
       else { q.panels[n] = (await c.send(panel(q, n))).id; await saveState(); }
     }
   }
+  client.once('clientReady', async () => {
+    for (const g of client.guilds.cache.values()) {
+      if (locks.has(g.id)) continue;
+      locks.add(g.id);
+      try { await refresh(g); }
+      catch (e) { console.error('Atualizacao dos paineis de filas:', e); }
+      finally { locks.delete(g.id); }
+    }
+  });
   async function create(g, m) {
     const q = state(g.id);
     const channels = await g.channels.fetch();
@@ -178,4 +211,3 @@ function installQueues(client, isStaff, adminRoles) {
   return { handle, stop: () => clearInterval(timer) };
 }
 module.exports = { installQueues, panel, matchCard, busy };
-

@@ -24,7 +24,7 @@ function setup() {
     channels.set(id, c); return c;
   }
   const lobby = channel('lobby');
-  const client = { user: { id: 'bot' }, isReady: () => true, guilds: { cache: new Map() } };
+  const client = { once() {}, user: { id: 'bot' }, isReady: () => true, guilds: { cache: new Map() } };
   const guild = { id: 'guild', client, roles: { cache: new Map() },
     members: { fetch: async id => ({ id }), fetchMe: async () => ({ id: 'bot' }), cache: new Map() },
     channels: { fetch: async id => id ? channels.get(id) : new discord.Collection(channels),
@@ -43,8 +43,14 @@ test('filas pareiam dois responsaveis, impedem duplicacao e restringem resultado
   const publish = s.interaction('admin', null, undefined, true); publish.commandName = 'filas';
   await s.api.handle(publish);
   assert.equal(Object.keys(s.state.queues.panels).length, 5);
+  assert.equal(s.state.queues.panels[5], 'lobby-0');
+  assert.equal(s.state.queues.panels[1], 'lobby-4');
+  const slots = { ...s.state.queues.panels };
+  s.state.queues.panels = Object.fromEntries(Object.entries(slots).map(([n, id]) => [6 - Number(n), id]));
   await s.api.handle(publish);
   assert.equal(Object.keys(s.state.queues.panels).length, 5);
+  assert.equal(s.state.queues.panels[5], 'lobby-0');
+  assert.equal(s.state.queues.panels[1], 'lobby-4');
   await s.api.handle(s.interaction('a', 'queue:join:gapple:2'));
   const b = s.interaction('b', 'queue:join:gapple:2');
   const duplicate = s.interaction('b', 'queue:join:gapple:2');
